@@ -41,10 +41,15 @@ ls
 
 import numpy as np
 import pandas as pd
-from builtin import lengthen, flatten, paste
+from typing import List, Tuple, Dict, Set, Optional, Union, NewType
+
+from .builtin import lengthen, flatten, paste
 
 #%%
+def which(x: Union[np.array, pd.Series], val: Union[str, float, int]):
+    return np.arange(len(x))[x == val]
 
+#%%
 def data_frame_0(letters, numbers, index=False, columns=None) -> pd.DataFrame:
     # depricated
     df = pd.DataFrame(paste(letters, numbers, False, flat=False))
@@ -78,7 +83,7 @@ def data_frame(letters, numbers, index=False, columns=None) -> pd.DataFrame:
         numbers = [numbers]
 
     for k in range(1, len(numbers)):
-        if len(numbers[k]) != len(numbers[k]):
+        if len(numbers[k]) != len(numbers[0]):
             raise ValueError('All sublists of `numbers` must have equal length.')
 
     if len(numbers) != len(letters):

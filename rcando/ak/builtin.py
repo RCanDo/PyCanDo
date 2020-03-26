@@ -44,7 +44,20 @@ from typing import List, Tuple, Dict, Set, Optional, Union, NewType
 
 #%%
 #%%
+import time
 
+def timeit(fun):
+    """decorator for timing"""
+    def wrapper(*args, **kwargs):
+        t0 = time.time()
+        result = fun(*args, **kwargs)
+        t1 = time.time()
+        dt = t1 - t0
+        print("Execution time: {:3.5f}".format(dt))
+        return result
+    return wrapper
+
+#%%
 def lengthen(x, n, as_list=True):
     '''Lengthening ll to the len(ll) == n;
     if ll is not iterable then it is turned into 1 element list (if `as_list` is True)
