@@ -3,18 +3,16 @@
 """
 ---
 # This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
+# !!! YAML message always begins with ---
 
-title:
+title: Plotti graphs 
 subtitle:
 version: 1.0
 type: code
-keywords: [kw1, kw2, ..., kwn]   # there are always some keywords!
+keywords: [graph, plot, draw]   # there are always some keywords!
 description: |
-remarks:    # additional notes worth emphasising
-    - eg. work interactively (in Spyder)
-    - install PackageX first
-    - etc.
+remarks:    
+    - NetworkX
 todo:
 sources:
     - title:
@@ -33,24 +31,61 @@ file:
         interactive: True
         terminal: True
     name: _.py
-    path: D:/ROBOCZY/Python/RCanDo/..
-    date: 2019-11-20
+    path: ~/Projects/Python/RCanDo/..
+    date: 2020-04-19
     authors:
         - nick: rcando
           fullname: Arkadiusz Kasprzyk
           email:
-              - akasp666@google.com
+              - rcando@int.pl
               - arek@staart.pl
 """
 
 #%%
 """
 pwd
-cd D:/ROBOCZY/Python/RCanDo/...
+cd ~/Projects/Python/RCanDo/...
 ls
 """
 
-import numpy as np
-import pandas as pd
+import networkx as nx
+
+#%%
+
+from matplotlib.axes import Axes
+
+
+def plot_network(graph: nx.DiGraph, 
+                 # ax: Axes, 
+                 node_size=1000, 
+                 node_label_size=12, node_color='white'):
+    pos = nx.drawing.circular_layout(graph)
+
+    nx.draw_networkx_nodes(graph, pos,
+                           node_shape='o',
+                           edgecolors='black',
+                           node_size=node_size,
+                           node_color=node_color,
+                           #ax=ax
+                           )
+
+    nx.draw_networkx_labels(graph, pos,
+                            font_color='black',
+                            font_weight='bold',
+                            font_size=node_label_size,
+                            #ax=ax
+                            )
+
+    nx.draw_networkx_edges(graph, pos,
+                           edge_color='gray',
+                           node_size=node_size,
+                           #ax=ax
+                           )
+
+    nx.draw_networkx_edge_labels(graph, pos,
+                                 font_size=9,
+                                 edge_labels={edge: graph.edges[edge]['weight'] for edge in graph.edges},
+                                 #ax=ax
+                            )
 
 #%%
