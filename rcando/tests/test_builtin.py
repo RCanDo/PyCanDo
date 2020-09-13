@@ -13,7 +13,7 @@ file:
         interactive: True
         terminal: True
     name: test_builtin.py
-    path: D:/ROBOCZY/Python/RCanDo/ak/
+    path: D:/ROBOCZY/Python/RCanDo/rcando/tests/
     date: 2019-11-20
     authors:
         - nick: rcando
