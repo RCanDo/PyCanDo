@@ -45,17 +45,28 @@ from typing import List, Tuple, Dict, Set, Optional, Union, NewType
 #%%
 import hashlib, time
 
-def htrandint(max=100):
+def htr(max: int=100) -> int:
+    """
+    Random integer with uivariate distribution on [0, max)
+    obtained by hashing (ssh224) current time and then taking modulo `max`.
+      
+    Examples
+    --------
+    > htrandint(10)
+    > htrandint(1e7)
+    
+    Aliases
+    -------
+    hashtimerandom(max)
+    hashtimerandint(max)
+    """
     N = int(max)
     hashtime = hashlib.sha224(str(time.time()).encode('ascii')).hexdigest()
     return int(hashtime, 16) % N
 
-"""
-htrandint(10)
-htrandint(1e7)
-"""
 # aliases
-hashtimerandom = htrandint
-hashtimerandint = htrandint
+htrandint = htr
+hashtimerandom = htr
+hashtimerandint = htr
 
 #%%
