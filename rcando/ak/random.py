@@ -13,7 +13,11 @@ keywords: [random, time]
 description: |
     Convieniens functions an utilities used in everyday work.
 content:
-    -
+    - htr(max: int=100) -> int
+    - randkasp1(a: Union[np.array, int], 
+              size: Union[List, int] = 1, 
+              replace: bool = True, 
+              power: int=2) -> Union[np.array, int]
 remarks:
 todo:
 sources:
@@ -47,7 +51,7 @@ import hashlib, time
 
 def htr(max: int=100) -> int:
     """
-    Random integer with uivariate distribution on [0, max)
+    Random integer with univariate distribution on [0, max)
     obtained by hashing (ssh224) current time and then taking modulo `max`.
       
     Examples
@@ -68,5 +72,46 @@ def htr(max: int=100) -> int:
 htrandint = htr
 hashtimerandom = htr
 hashtimerandint = htr
+
+#%%
+from .nppd import prob
+import numpy as np
+
+def randkasp1(a: Union[np.array, int], 
+              size: Union[List, int] = None, 
+              replace: bool = True, 
+              power: int=2) -> Union[np.array, int]:
+    """
+    ==np.random.choice(a, size, replace, p=ak.p(np.arange(len(a), 0, -1)**power))
+    see help(np.random.choice)
+    
+    import matplotlib.pyplot as plt
+    M = 1000
+    plt.scatter(x=range(M), y=[ak.randkasp1(N, power=3) for k in range(M)])
+    """
+    if isinstance(a, (int, float)):
+        N = a = int(a)
+    else:
+        N = len(a)
+    return np.random.choice(a, size, replace, p=prob(np.arange(N, 0, -1)**power))
+
+
+def randkasp2(a: Union[np.array, int], 
+              size: Union[List, int] = None, 
+              replace: bool = True, 
+              power: int=2) -> Union[np.array, int]:
+    """
+    ==np.random.choice(a, size, replace, p=ak.p(np.arange(len(a), 0, -1)**power))
+    see help(np.random.choice)
+    
+    import matplotlib.pyplot as plt
+    M = 1000
+    plt.scatter(x=range(M), y=[ak.randkasp1(N, power=3) for k in range(M)])
+    """
+    if isinstance(a, (int, float)):
+        N = a = int(a)
+    else:
+        N = len(a)
+    return np.random.choice(a, size, replace, p=prob(np.arange(N, 0, -1)**power))
 
 #%%

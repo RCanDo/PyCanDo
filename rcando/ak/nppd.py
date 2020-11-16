@@ -46,8 +46,18 @@ from typing import List, Tuple, Dict, Set, Optional, Union, NewType
 from .builtin import lengthen, flatten, paste
 
 #%%
-def which(x: Union[np.array, pd.Series], val: Union[str, float, int]):
+def which(x: Union[np.array, pd.Series], val: Union[str, float, int]) -> int:
     return np.arange(len(x))[x == val]
+
+#%%
+def probability(x: np.ndarray) -> np.ndarray:
+    return abs(x)/np.nansum(abs(x))
+
+p = probability
+prob = probability
+
+def center(x: np.ndarray) -> np.ndarray:
+    return x - np.nanmean(x)
 
 #%%
 def data_frame_0(letters, numbers, index=False, columns=None) -> pd.DataFrame:
@@ -105,7 +115,6 @@ def data_frame(letters, numbers, index=False, columns=None) -> pd.DataFrame:
         df.columns = columns
 
     return df
-
 
 
 #%%
