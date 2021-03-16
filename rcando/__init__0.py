@@ -5,8 +5,8 @@ from .ak import *
 from .copies import *
 from .ts import *
 from .graphs import *
-# each module depends on number of specific packages 
-# and we do not want to load everything always, like: pdmarima, statsmodels, networkx 
+# each module depends on number of specific packages
+# and we do not want to load everything always, like: pmdarima, statsmodels, networkx
 # only to use some simple utility
 
 # if this file is enabled then to run
