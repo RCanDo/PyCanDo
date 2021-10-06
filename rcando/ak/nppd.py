@@ -79,7 +79,6 @@ def data_frame_0(letters, numbers, index=False, columns=None) -> pd.DataFrame:
     return df
 
 #%%
-
 def data_frame(letters, numbers, index=False, columns=None) -> pd.DataFrame:
     """
     letters: list of letters;
@@ -118,4 +117,26 @@ def data_frame(letters, numbers, index=False, columns=None) -> pd.DataFrame:
 
 
 #%%
+"""
+import re
 
+df = tfidf_df.to_string()
+df
+
+df1 = re.sub("0(.0+ )*", ". ", df)
+print(df1)
+"""
+
+#%%
+
+def print_df(df: pd.DataFrame, zero_fill: str="."):
+    """
+    V 0.1    !!!
+    how to deal with 0 and NaNs in one data frame ???
+    """
+    if not zero_fill is None:
+        df[df==0] = np.nan
+        dfs =  df.to_string(na_rep=zero_fill)
+    print(dfs)
+
+#%%

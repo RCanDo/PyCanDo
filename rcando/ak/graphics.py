@@ -13,6 +13,7 @@ keywords: [kw1, ...]   # there are always some keywords!
 description: |
 remarks:
 todo:
+    - How to use it as module which loads  `black.mplstyle`  from its directory ???
 sources:
     - title:
       chapter:
@@ -49,9 +50,22 @@ ls
 
 
 #%%
+def set_style(style='', style_default=path_wd+'/black.mplstyle', c='', c_default='y'):
+    '''
+    c : color;
 
-import matplotlib.pyplot as plt
-plt.style.use('dark_background')
-# see `plt.style.available` for list of available styles
+    style : mpl.style
+    '''
+    global path_wd
+
+    if c=='': c=c_default
+    if style=='': style=style_default  ##'dark_background'
+
+    if style in [ 'dark_background', path_wd+'/black.mplstyle' ]:
+        c = c.replace('b','y').replace('k','w')
+
+    plt.style.use(style)
+
+    return style, c
 
 #%%

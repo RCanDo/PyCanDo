@@ -1,0 +1,40 @@
+## title: basic mpl config
+## date:2018-02-11
+## author: Arkadiusz Kasprzyk
+## email: arkadiusz.kasprzyk@tieto.com; ext-arkadiusz.kasprzyk@here.com
+##
+## import matplotlib as mpl
+## mpl.rcParams
+##
+
+figure.facecolor : black
+axes.facecolor : black
+axes.edgecolor : lightgray
+axes.labelcolor : lightgray
+grid.color : darkgray           # #b0b0b0
+hatch.color : lightgray
+lines.color: yellow       #C0
+patch.edgecolor : lightgray
+patch.facecolor : yellow
+savefig.facecolor : black
+savefig.edgecolor : lightgray
+text.color : lightgray
+xtick.color : lightgray
+ytick.color : lightgray
+
+
+
+axes.titlesize : large    ##24
+axes.labelsize : medium   ##20
+axes.xmargin : .01
+axes.ymargin : .01
+
+grid.alpha : 0.5
+grid.linestyle : -
+
+lines.linewidth : 1       #1.5
+lines.markersize : 1      #6.0
+
+xtick.labelsize : medium  ##16
+ytick.labelsize : medium  ##16
+

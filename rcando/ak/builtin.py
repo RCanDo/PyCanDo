@@ -40,7 +40,7 @@ cd D:/ROBOCZY/Python/RCanDo/...
 ls
 """
 
-from typing import List, Tuple, Dict, Set, Optional, Union, NewType
+from typing import List, Tuple, Dict, Set, Optional, Union, NewType, Iterator
 
 #%%
 #%%
@@ -58,7 +58,7 @@ def timeit(fun):
     return wrapper
 
 #%%
-def lengthen(x, n, as_list=True):
+def lengthen0(x, n, as_list=True):
     '''Lengthening ll to the len(ll) == n;
     if ll is not iterable then it is turned into 1 element list (if `as_list` is True)
     or tuple (in other case) and then 'multiplied' n times.
@@ -87,6 +87,21 @@ def lengthen(x, n, as_list=True):
         sys.exit(1)
 
     return x
+
+#%%
+from itertools import *
+def lengthen(iterable: Iterator, n: int, as_list: bool=True) -> Iterator:
+
+    iterable = islice(chain(iterable, repeat(iterable[-1], max(0, n - len(iterable)))), n)
+
+    if as_list:
+        result = list(iterable)
+    else:
+        result = tuple(iterable)
+
+    return result
+
+# lengthen0([1, 3, 2, 5], 9, True)
 
 #%%
 def flatten(lst: list) -> list:
