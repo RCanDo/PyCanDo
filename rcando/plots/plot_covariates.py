@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 #! python3
+# -*- coding: utf-8 -*-
 """
 ---
 # This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
@@ -28,7 +28,12 @@ content:
 remarks:
 todo:
     - categorical ~ numeric  may be shown via multinomial logistic model,
-      i.e. probaility of each category wrt to value of x.
+      i.e. probability of each category wrt to value of x;
+    - violinplots  for  numeric ~ factor (~432);
+    - factor ~ factor (~695)  is in very crude version;
+    - barchart (~475): legend (bbox_to_anchor, loc, ...);
+      figure size for large amount of levels and long level names;
+    -
 sources:
 file:
     usage:
@@ -41,17 +46,32 @@ file:
               - arkadiusz.kasprzyk@quantup.pl
 """
 
-#%%
-from .helpers import *
+# %%
+from typing import Iterable
 
-#%% plot_()
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy.stats import gaussian_kde
 
-def plot_covariates(variable, covariate, data=None,
-        varname=None, covarname=None, title=None,
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap  # LinearSegmentedColormap
+
+import common.df as cdf
+from common.builtin import coalesce
+import common.plots.helpers as h
+from common.plots.rocs import rocs as rocs0
+
+
+# %% plot_()
+def plot_covariates(
+        variable, covariate, data=None,
+        varname=None, covarname=None, title=None, title_suffix=None,
         ignore_index=False,
         factor_threshold=13,
         as_factor_y=None, as_factor_x=None,
-        what = ["grouped_cloud", "densities", "boxplots"],
+        what=["grouped_cloud", "densities", "boxplots"],
         # Variables modifications (before plotting)
         lower_y=None, upper_y=None, exclude_y=None,
         lower_x=None, upper_x=None, exclude_x=None,
@@ -59,25 +79,24 @@ def plot_covariates(variable, covariate, data=None,
         lower_t_y=None, upper_t_y=None, exclude_t_y=None,
         lower_t_x=None, upper_t_x=None, exclude_t_x=None,
         #
-        bins=21, smooth=.5, # 0 or 1 for OLS (check it!)
-        qq_plot=False,            # add qq-plot for  num_vs_num  plot
-        sort_levels=True, legend=True, print_levels=True, bar_height=.5,
+        bins=21, smooth=.5,  # 0 or 1 for OLS (check it!)
+        qq_plot=False,       # add qq-plot for  num_vs_num  plot
+        sort_levels=True, legend=True, axes_labels=True, print_levels=True, bar_height=.5,
         n_obs=int(1e4), random_state=None, shuffle=False,        # ???
-        # Graphical parameters
         most_common=13,
-        figsize=None, figwidth=None, figheight=None, # for the whole figure
-        width=None, height=None, size=5, width_adjust=1.2, # for the single plot
-        xscale="linear", yscale="linear",
-        lines=True,     # not used here yet!
-        cmap="Paired",  # for coloring of bars in "hist" and respective points of "agg"
-        alpha=None, s=9,   # alpha and size of a data point in a "cloud"
-        style=True, color=None, grid=True, titlecolor=None,
-        suptitlecolor=None, suptitlesize=1., # multiplier of 15
+        # Graphical parameters
+        figsize=None, figwidth=None, figheight=None,  # for the whole figure
+        width=None, height=None, size=5, width_adjust=1.2,  # for the single plot
+        scale="linear", xscale=None, yscale=None,
+        lines=True,  # not used here yet!
+        cmap="ak01",  # for coloring of bars in "hist" and respective points of "agg"
+        color=None, s=9, alpha=None, brightness=None,  # alpha, size and brightness of a data point
+        style=True, grid=True, axescolor=None, titlecolor=None,
+        suptitlecolor=None, suptitlesize=1.,  # multiplier of 15
         #
         tex=False,  # varname & covarname passed in TeX format e.g. "\\hat{Y}" (double`\` needed)
         print_info=True, res=False,
-        *args, **kwargs
-        ):
+        *args, **kwargs):
     """
     Remarks
     -------
@@ -103,43 +122,25 @@ def plot_covariates(variable, covariate, data=None,
 
     - `most_common` applied before `sort_levels`
     """
-    ##-------------------------------------------------------------------------
-    ## loading data
+    # -------------------------------------------------------------------------
+    #  loading data
 
-    if isinstance(variable, str):
-        variable = data[variable].copy()
-    else:
-        variable = pd.Series(variable)      # for lists or np.arrays
-        if variable.name is None:
-            variable.name = "variable"
-
-    if varname is None:
-        varname = coalesce(variable.name, "Y")
-
-
-    if isinstance(covariate, str):
-        covariate = data[covariate].copy()
-    else:
-        covariate = pd.Series(covariate)      # for lists or np.arrays
-        if covariate.name is None:
-            covariate.name = "covariate"
-
-    if covarname is None:
-        covarname = coalesce(covariate.name, "X")
-
+    variable, varname = h.get_var_and_name(variable, data, varname, "Y")
+    covariate, covarname = h.get_var_and_name(covariate, data, covarname, "X")
     if varname == covarname:
         covarname += "_0"
 
-    #!!! index is ABSOLUTELY CRITICAL here !!!
+    # !!! index is ABSOLUTELY CRITICAL here !!!
     if ignore_index:
-        covariate.index = variable.index
+        variable, covariate, color, s, alpha = cdf.align_indices(variable, covariate, color, s, alpha)
 
-    ##-----------------------------------------------------
-    ## info on raw data
+    # -----------------------------------------------------
+    #  info on raw data
+
     df0 = pd.concat([variable, covariate], axis=1)
     df0.columns = [varname, covarname]
 
-    df0_info = info(df0, what = ["dtype", "oks", "oks_ratio", "nans_ratio", "nans"])
+    df0_info = cdf.info(df0, what=["dtype", "oks", "oks_ratio", "nans_ratio", "nans", "uniques"])
     if print_info:
         print(" 1. info on raw data")
         print(df0_info)
@@ -149,83 +150,54 @@ def plot_covariates(variable, covariate, data=None,
 
     del df0
 
-    ##-------------------------------------------------------------------------
-    ## preparing data
+    # -------------------------------------------------------------------------
+    #  preparing data
 
-    if not lower_y is None:
-        variable = variable[variable >= lower_y]
-        #lower_y_str = f"{lower_y} <= "
-    if not upper_y is None:
-        variable = variable[variable <= upper_y]
-        #upper_y_str = f" <= {upper_y}"
-    if not exclude_y is None:
-        variable = variable[~ variable.isin(flatten([exclude_y]))]
+    # this makes sense also for factors although not always
+    variable, _ = h.clip_transform(variable, lower_y, upper_y, exclude_y)
+    covariate, _ = h.clip_transform(covariate, lower_x, upper_x, exclude_x)
 
-    if not lower_x is None:
-        covariate = covariate[covariate >= lower_x]
-    if not upper_x is None:
-        covariate = covariate[covariate <= upper_x]
-    if not exclude_x is None:
-        covariate = covariate[~ covariate.isin(flatten([exclude_x]))]
+    # it's here because we may turn numeric to factor after clipping
+    is_factor_y, variable, variable_vc = h.to_factor(
+        variable, as_factor_y, most_common=most_common, factor_threshold=factor_threshold)
+    is_factor_x, covariate, covariate_vc = h.to_factor(
+        covariate, as_factor_x, most_common=most_common, factor_threshold=factor_threshold)
 
-
-    is_factor_y, variable, variable_vc  = to_factor(variable, as_factor_y, most_common=most_common, factor_threshold=factor_threshold)
-    is_factor_x, covariate, covariate_vc = to_factor(covariate, as_factor_x, most_common=most_common, factor_threshold=factor_threshold)
-
+    # aligning data
     df0 = pd.concat([variable, covariate], axis=1)
     df0.columns = [varname, covarname]
     df0.dropna(inplace=True)
-    df0.index = range(df0.shape[0])
-    # or df = df.reset_index() # but it creates new column with old index -- mess
 
     variable = df0[varname]
     covariate = df0[covarname]
 
     df = df0
-    # df0 -- unprocessed data, i.e. only to_factor(...) and .dropna()
-    # df -- potentially processed data
+    # df0 -- data not transformed (however clipped and .dropna())
+    # df  -- data potentially transformed (or just copy of df0 if no tranformations)
 
-    ##-----------------------------------------------------
-    ## transforms
+    # -----------------------------------------------------
+    #  transforms
 
-    transform_y = coalesce(transform_y, False)      # function always have name so it's spurious
-    if transform_y and not is_factor_y:
-        if isinstance(transform_y, bool):
-            variable, transform_y = power_transformer(variable)
-        else:
-            transform_y.__name__ = coalesce(transform_y.__name__, "T_y")
-            variable = pd.Series(transform_y(variable))
+    transname_y = None
+    if not is_factor_y:
+        variable, transname_y = h.clip_transform(
+            variable, None, None, None,
+            transform_y, lower_t_y, upper_t_y, exclude_t_y, "T_y")
 
-        if not lower_t_y is None:
-            variable = variable[variable >= lower_t_y]
-        if not upper_t_y is None:
-            variable = variable[variable <= upper_t_y]
-        if not exclude_t_y is None:
-            variable = variable[~ variable.isin(flatten([exclude_t_y]))]
+    transname_x = None
+    if not is_factor_x:
+        covariate, transname_x = h.clip_transform(
+            covariate, None, None, None,
+            transform_x, lower_t_x, upper_t_x, exclude_t_x, "T_x")
 
-    transform_x = coalesce(transform_x, False)      # function always have name so it's spurious
-    if transform_x and not is_factor_x:
-        if isinstance(transform_x, bool):
-            covariate, transform_x = power_transformer(covariate)
-        else:
-            transform_x.__name__ = coalesce(transform_x.__name__, "T_x")
-            covariate = pd.Series(transform_x(covariate))
-
-        if not lower_t_x is None:
-            covariate = covariate[covariate >= lower_t_x]
-        if not upper_t_x is None:
-            covariate = covariate[covariate <= upper_t_x]
-        if not exclude_t_x is None:
-            covariate = covariate[~ covariate.isin(flatten([exclude_t_x]))]
-
-    ## !!! TODO !!!  make it robust on (*): when False passed data_were_processed=True -- bad!
+    # aligning data
+    # !!! make it robust on (*): when False passed data_were_processed=True -- bad!
     transforms = [transform_y, lower_t_y, upper_t_y, exclude_t_y, transform_x, lower_t_x, upper_t_x, exclude_t_x]
     if any(transforms):
         df = pd.concat([variable, covariate], axis=1)
         df.columns = [varname, covarname]
         df.dropna(inplace=True)
-        df.index = range(df.shape[0])
-        # or df = df.reset_index() # but it creates new column with old index
+        # df.index = range(df.shape[0])
 
         variable = df[varname]
         covariate = df[covarname]
@@ -234,58 +206,95 @@ def plot_covariates(variable, covariate, data=None,
     else:
         data_were_processed = False    # (*)
 
-    print(data_were_processed)
+    # print(data_were_processed)
 
-    ##-----------------------------------------------------
-    ## statistics for processed data
-    df_variation = summary(df,
-        what=["oks", "uniques", "most_common", "most_common_ratio", "most_common_value", "dispersion"])
+    # -----------------------------------------------------
+    #  statistics for processed data
 
-    df_distribution = summary(df,
-        what=["range", "iqr", "mean", "median", "min", "max", "negatives", "zeros", "positives"])
+    df_variation = cdf.summary(
+        df, what=["oks", "uniques", "most_common", "most_common_ratio", "most_common_value", "dispersion"])
 
-    ## ...
+    df_distribution = cdf.summary(
+        df, what=["range", "iqr", "mean", "median", "min", "max", "negatives", "zeros", "positives"])
 
-    ##-----------------------------------------------------
-    ## title
+    # -----------------------------------------------------
+    #  title
 
     if title is None:
 
-        title = make_title(varname, lower_y, upper_y, transform_y, lower_t_y, upper_t_y, tex) + \
-                " ~ " + \
-                make_title(covarname, lower_x, upper_x, transform_x, lower_t_x, upper_t_x, tex)
+        title = h.make_title(varname, lower_y, upper_y, transname_y, lower_t_y, upper_t_y, tex) + \
+            " ~ " + \
+            h.make_title(covarname, lower_x, upper_x, transname_x, lower_t_x, upper_t_x, tex)
+        # the same for  numeric ~ factor  and  factor ~ numeric
 
-    ## ----------------------------------------------------
-    ## !!! result !!!
+    if title_suffix:
+        title = title + title_suffix
 
-    result = { "title" : title,
-        "df0" : df0,  # unprocessed
-        "df" : df,    # processed
-        "info" : df0_info,
+    #  ----------------------------------------------------
+    #  !!! result !!!
+
+    result = {
+        "title": title,
+        "df0": df0,  # unprocessed
+        "df": df,    # processed
+        "info": df0_info,
         "variation": df_variation,
-        "distribution": df_distribution,
-        }  # variable after all prunings and transformations
+        "distribution": df_distribution,  # variable after all prunings and transformations
+        "plot": dict()
+    }
 
-    ##---------------------------------------------------------------------------------------------
-    ## plotting
+    # ---------------------------------------------------------------------------------------------
+    #  plotting
 
-    ##-------------------------------------------------------------------------
-    ## style affairs
+    # -------------------------------------------------------------------------
+    #  style affairs
 
     N = len(variable) if not n_obs else min(len(variable), int(n_obs))
-    style, color, grid, suptitlecolor, titlecolor, alpha = \
-        style_affairs(style, color, grid, suptitlecolor, titlecolor, alpha, N)
 
-    ##-------------------------------------------------------------------------
-    ## helpers
-    ## TODO: implement them as decorators !
+    # !!! get  color, s, alhpa  from data if they are proper column names !!!
 
-    ##-------------------------------------------------------------------------
-    ## plot types
+    if isinstance(alpha, str):
+        alpha = data[alpha]
+
+    if isinstance(s, str):
+        s = data[s]
+
+    # take color from data only if it's not a color name
+    if isinstance(color, str) and not h.is_mpl_color(color) and color in data.columns:
+        color = data[color]
+
+    color_data = color
+    if not isinstance(color, str) and isinstance(color, Iterable):
+        color = None
+
+    style, color, grid, axescolor, suptitlecolor, titlecolor, brightness, alpha = \
+        h.style_affairs(style, color, grid, axescolor, suptitlecolor, titlecolor, brightness, alpha, N)
+
+    if color_data is None:
+        color_data = color
+
+    # -----------------------------------------------------
+    # sampling and aligning color, size, alpha (if they are series)
+
+    def sample_and_align(variable, covariate, n_obs=n_obs, shuffle=shuffle, random_state=random_state,
+                         color=color, s=s, alpha=alpha, color_data=color_data):
+        df = pd.concat([variable, covariate], axis=1)
+        df, color, s, alpha, color_data = cdf.align_sample(df, n_obs, shuffle, random_state,
+                                                           color=color, s=s, alpha=alpha, color_data=color_data)
+        df, color, s, alpha, color_data = cdf.align_nonas(df, color=color, s=s, alpha=alpha, color_data=color_data)
+        variable = df.iloc[:, 0]
+        covariate = df.iloc[:, 1]
+        return variable, covariate, color, s, alpha, color_data
+
+    # -------------------------------------------------------------------------
+    #  plot types
+
+    # -----------------------------------------------------
+    #  numeric ~ numeric
 
     def qq(covariate, variable):
-        qqx = [covariate.quantile(q/10) for q in range(11)]
-        qqy = [variable.quantile(q/10) for q in range(11)]
+        qqx = [covariate.quantile(q / 10) for q in range(11)]
+        qqy = [variable.quantile(q / 10) for q in range(11)]
         return qqx, qqy
 
     def scatter_hist(ax, ax_histx, ax_histy):
@@ -298,7 +307,7 @@ def plot_covariates(variable, covariate, data=None,
         ax_histy.tick_params(axis="y", labelleft=False)
 
         # the scatter plot:
-        scatter = ax.scatter(covariate, variable, s=s, color=color, alpha=alpha)
+        scatter = ax.scatter(covariate, variable, s=s, color=color_data, alpha=alpha)
         if qq_plot:
             qqx, qqy = qq(covariate, variable)
             ax.plot(qqx, qqy, color=mpl.colors.to_rgba(color, .5), marker="*")
@@ -306,30 +315,31 @@ def plot_covariates(variable, covariate, data=None,
             qqx, qqy = None, None
 
         # now determine nice limits by hand:
-        #binwidth = 0.25
-        #xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
-        #lim = (int(xymax/binwidth) + 1) * binwidth
+        # binwidth = 0.25
+        # xymax = max(np.max(np.abs(x)), np.max(np.abs(y)))
+        # lim = (int(xymax/binwidth) + 1) * binwidth
 
-        #bins = np.arange(-lim, lim + binwidth, binwidth)
+        # bins = np.arange(-lim, lim + binwidth, binwidth)
         histx = ax_histx.hist(covariate, bins=bins, color=mpl.colors.to_rgba(color, .6))
-        histy = ax_histy.hist(variable,  bins=bins, color=mpl.colors.to_rgba(color, .6), orientation='horizontal')
+        histy = ax_histy.hist(variable, bins=bins, color=mpl.colors.to_rgba(color, .6), orientation='horizontal')
 
-        return ax, scatter, histx, histy, qqx, qqy
+        result = dict(scatter=scatter, histx=histx, histy=histy, qqx=qqx, qqy=qqy)
+        return dict(ax=ax, result=result)
 
     def smoother(ax):
         """helper for cloud()
         lowess trend of variable vs covariate
         """
         xx = np.linspace(min(covariate), max(covariate), 100)
-        #print(xx)
-        smoothed = sm.nonparametric.lowess(exog=covariate, endog=variable,
+        smoothed = sm.nonparametric.lowess(
+            exog=covariate, endog=variable,
             xvals=xx,
             frac=smooth)
-        #print(smoothed)
 
         ax.plot(xx, smoothed, c="r" if color != 'r' else 'k')
 
-        return ax, xx, smoothed
+        result = dict(xx=xx, smoothed=smoothed)
+        return dict(ax=ax, result=result)
 
     def cloud(fig, title="scatter"):
         """
@@ -337,7 +347,7 @@ def plot_covariates(variable, covariate, data=None,
         https://matplotlib.org/stable/gallery/lines_bars_and_markers/scatter_hist.html#sphx-glr-gallery-lines-bars-and-markers-scatter-hist-py
         """
         # set_title(ax, title, titlecolor)
-        # ## ---------
+        # #  ---------
 
         # definitions for the axes
         left, width = 0.1, 0.7
@@ -349,19 +359,23 @@ def plot_covariates(variable, covariate, data=None,
         rect_histy = [left + width + spacing, bottom, 0.149, height]
 
         # start with a square Figure
-        #fig = plt.figure(figsize=(8, 8))
+        # fig = plt.figure(figsize=(8, 8))
 
         ax = fig.add_axes(rect_scatter)
         ax_histx = fig.add_axes(rect_histx, sharex=ax)
         ax_histy = fig.add_axes(rect_histy, sharey=ax)
 
         # use the previously defined function
-        ax, scatter, histx, histy, qqx, qqy = scatter_hist(ax, ax_histx, ax_histy)
-        ax, xx, smoothed = smoother(ax)
+        sh = scatter_hist(ax, ax_histx, ax_histy)
+        sm = smoother(sh['ax'])
+        ax = sm['ax']
 
-        #plt.show()
+        # plt.show()
+        if axes_labels:
+            ax.set_ylabel(varname)
+            ax.set_xlabel(covarname)
 
-        ## ---------
+        #  ---------
         if grid:
             if not isinstance(grid, bool):
                 ax.grid(**grid)
@@ -372,10 +386,15 @@ def plot_covariates(variable, covariate, data=None,
             ax_histx.grid(visible=False, axis="both")
             ax_histy.grid(visible=False, axis="both")
 
-        return fig, ax, scatter, ax_histx, histx, ax_histy, histy, qqx, qqy
+        axes = dict(ax=ax, ax_histx=ax_histx, ax_histy=ax_histy)
+        result = dict(scatter_hist=sh['result'], smoother=sm['result'])
 
-    #%%
-    def cats_and_colors(factor, most_common):
+        return dict(fig=fig, axes=axes, result=result)
+
+    # -----------------------------------------------------
+    #  numeric ~ factor
+
+    def cats_and_colors(factor, most_common, cmap):
         """helper function
         most_common : None; pd.Series
             table of most common value counts = variable.value_counts[:most_common]
@@ -387,126 +406,197 @@ def plot_covariates(variable, covariate, data=None,
         cmap : listed color map as defined in matplotlib
         """
         cats = factor.cat.categories.to_list()
-        if not most_common is None:
+        if most_common is not None:
             cats = [cat for cat in cats if cat in most_common]
         #
-        cat_colors = plt.colormaps['hsv'](np.linspace(0.1, 0.9, len(cats)))
+        cat_colors = plt.colormaps[cmap](np.linspace(0.1, 0.9, len(cats)))
         cmap = ListedColormap(cat_colors)
         return cats, cat_colors, cmap
 
     def grouped_cloud(ax, variable, factor, cats, cat_colors, cmap, title="grouped cloud", sort=sort_levels):
         """
         """
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
 
         dff = pd.concat([variable, factor, factor.cat.codes], axis=1)
-        dff.columns = [variable.name, factor.name, "codes"]
+        dff.columns = [variable.name, factor.name, "cats"]
         if sort:
-            dff.sort_values(by="codes", ignore_index=True, inplace=True)
+            dff.sort_values(by="cats", ignore_index=True, inplace=True)
 
         dff = dff[dff[factor.name].isin(cats)]     # sorting is retained !
 
-        scatter = ax.scatter(dff[variable.name], dff.index, c=dff['codes'], cmap=cmap, s=s, alpha=alpha)
+        scatter = ax.scatter(dff[variable.name], dff.index, c=dff['cats'], cmap=cmap, s=s, alpha=alpha)
 
-        ## ---------
-        set_grid(ax, off="both", grid=grid)
-
-        return ax, scatter, cat_colors, dff
+        if axes_labels:
+            ax.set_xlabel(varname)
+            # ax.set_ylabel('id')
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        #
+        result = dict(scatter=scatter, cat_colors=cat_colors, dff=dff)
+        return dict(ax=ax, result=result)
 
     def densities(ax, variable, factor, cats, cat_colors, cmap, title="densities by levels", legend=legend):
         """
         """
-        set_title(ax, title, titlecolor)
-        ## ---------
-
+        h.set_title(ax, title, titlecolor)
+        #  ---------
+        result = dict()
         for cat, col in reversed(list(zip(cats, cat_colors))):
+            result[cat] = dict()
             vv = variable[factor == cat]
             if len(vv) > 1:
                 try:
-                    density = gaussian_kde(vv.astype(float))
+                    result[cat]['kde'] = gaussian_kde(vv.astype(float))
                 except Exception:
-                    density = gaussian_kde(vv)
+                    result[cat]['kde'] = gaussian_kde(vv)
                 xx = np.linspace(min(vv), max(vv), 200)
-                ax.plot(xx, density(xx), color=col, label=cat)
+                lines = ax.plot(xx, result[cat]['kde'](xx), color=col, label=cat)
+                result[cat]['xx'] = xx
+                result[cat]['lines'] = lines
         if legend:
-            ax.legend()
+            ax.legend(title=covarname)
+        if axes_labels:
+            ax.set_xlabel(varname)
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        #
+        return dict(ax=ax, result=result)
 
-        ## ---------
-        set_grid(ax, off="both", grid=grid)
+    def distr(ax, variable, factor, cats, cat_colors, cmap, title="distributions by levels", legend=legend):
+        """
+        """
+        h.set_title(ax, title, titlecolor)
+        #  ---------
+        result = dict()
+        for cat, col in reversed(list(zip(cats, cat_colors))):
+            result[cat] = dict()
+            vv = variable[factor == cat]
+            if len(vv) > 1:
+                # # line version
+                # result = ax.plot(*h.distribution(vv), color=col, label=cat, linewidth=1)
+                # dots version
+                result[cat]['scatter'] = ax.scatter(*h.distribution(vv), s=.2, color=col, label=cat)
+                # `~matplotlib.collections.PathCollection`
+        if legend:
+            ax.legend(title=covarname)
+        if axes_labels:
+            ax.set_xlabel(varname)
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        #
+        return dict(ax=ax, result=result)
 
-        return ax, xx, density
+    def rocs(ax, variable, factor, cats, cat_colors, cmap, title="distributions by levels", legend=legend):
+        """
+        """
+        h.set_title(ax, title, titlecolor)
+        #  ---------
+        fpr, tpr, thresh, auroc = rocs0(variable, factor)
+
+        ax.set_xlim([0.0, 1.0])
+        ax.set_ylim([0.0, 1.05])
+        ax.plot([0, 1], [0, 1], color=axescolor, lw=2, linestyle=":")
+
+        if len(cats) > 2:
+            for cat, col in reversed(list(zip(cats, cat_colors))):
+                lines = ax.plot(fpr[cat], tpr[cat], color=col)
+        else:
+            lines = ax.plot(fpr, tpr, color=cat_colors[1], label=f"AUC = {round(auroc, 4)}")
+            print(f"AUC = {round(auroc, 4)}")
+
+        if legend:
+            ax.legend(loc="lower right")
+        if axes_labels:
+            ax.set_xlabel("FPR")
+            ax.set_ylabel("TPR")
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        #
+        result = dict(fpr=fpr, tpr=tpr, thresh=thresh, auroc=auroc, lines=lines)
+        return dict(ax=ax, result=result)
 
     def boxplots(ax, variable, factor, cats, cat_colors, cmap, title="box-plots", horizontal=True, color=color):
         """
-        TODO:
+        future:
             - violinplots
-       """
-        set_title(ax, title, titlecolor)
-        ## ---------
+        """
+        h.set_title(ax, title, titlecolor)
+        #  ---------
 
         vvg = variable.groupby(factor)
         data = [vvg.get_group(g) for g in cats if g in vvg.groups.keys()]
 
-        bplot = ax.boxplot(data, labels=cats, vert=(not horizontal),
+        bplot = ax.boxplot(
+            data, labels=cats, vert=(not horizontal),
             notch=False,
             #
-            patch_artist = True,                              #!!!
-            boxprops = dict(color=color, facecolor=color),
-            whiskerprops = dict(color=color),
-            capprops = dict(color=color),
-            flierprops = dict(color=color, markeredgecolor=color, marker="|"),
-            medianprops = dict(color=color, lw=3),   #(color='white' if color in ['k', 'black'] else 'k', lw=2),
+            patch_artist=True,                              # !!!
+            boxprops=dict(color=color, facecolor=color),
+            whiskerprops=dict(color=color),
+            capprops=dict(color=color),
+            flierprops=dict(color=color, markeredgecolor=color, marker="|"),
+            medianprops=dict(color=color, lw=3),   # (color='white' if color in ['k', 'black'] else 'k', lw=2),
             #
-            showmeans = True,
-            #meanline = False,
-            meanprops = dict(#color='white' if color in ['k', 'black'] else 'k',
+            showmeans=True,
+            # meanline=False,
+            meanprops=dict(  # color='white' if color in ['k', 'black'] else 'k',
                              marker="d",
                              markeredgecolor=color,
-                             markerfacecolor='white' if color in ['k', 'black'] else 'k', markersize=11)
-            )
+                             markerfacecolor='white' if color in ['k', 'black'] else 'k', markersize=11))
 
         for patch, color in zip(bplot['boxes'], cat_colors):
             patch.set_facecolor(color)
 
-        ## ---------
-        set_grid(ax, off="both", grid=grid)
+        if axes_labels:
+            ax.set_xlabel(varname)
+            ax.set_ylabel(covarname)
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        #
+        result = dict(bplot=bplot)
+        return dict(ax=ax, result=result)
 
-        return ax, bplot
-
+    # -----------------------------------------------------
+    #  factor ~ factor
 
     def barchart(ax, title="bar-chart", horizontal=True, align=True, bar_height=bar_height):
         """
         for both factors
-        TODO:
+        future:
             - legend (bbox_to_anchor, loc, ...)
             - figure size for large amount of levels and long level names
         """
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
 
         labels = variable.cat.categories.to_list()
 
         df0 = pd.concat([variable, covariate], axis=1)
         df0g = df0.groupby([variable.name, covariate.name])
-        #df0g.agg(len)
-        data = df0g.agg(len).unstack(fill_value=0)     #!!!
+        # df0g.agg(len)
+        data = df0g.agg(len).unstack(fill_value=0)     # !!!
         data_cum = data.cumsum(axis=1)
 
         if align:
-            data_widths = data.apply(lambda x: x/sum(x), axis=1)
-            data_cum_1 = data_cum.apply(lambda x: x/max(x), axis=1)
+            data_widths = data.apply(lambda x: x / sum(x), axis=1)
+            data_cum_1 = data_cum.apply(lambda x: x / max(x), axis=1)
         else:
             data_widths = data
             data_cum_1 = data_cum
 
-
         cats_c = covariate.cat.categories.to_list()
         n_cats_c = len(cats_c)
-        #cm = mpl.cm.get_cmap("hsv", n_cats_c)
+        # cm = mpl.cm.get_cmap("hsv", n_cats_c)
         colors = plt.colormaps['hsv'](np.linspace(0.1, 0.9, n_cats_c))
 
-        #fig, ax = plt.subplots(figsize=(9.2, 5))
+        # fig, ax = plt.subplots(figsize=(9.2, 5))
         ax.invert_yaxis()
         ax.xaxis.set_visible(False)
         ax.set_xlim(0, data_cum_1.max().max())
@@ -518,57 +608,64 @@ def plot_covariates(variable, covariate, data=None,
                             label=cat, color=color)
             r, g, b, _ = color
             text_color = 'white' if r * g * b < 0.5 else 'darkgrey'
-            ax.bar_label(rects, labels=data.iloc[:, i] , label_type='center', color=text_color)
+            ax.bar_label(rects, labels=data.iloc[:, i], label_type='center', color=text_color)
 
         if legend:
             ax.legend(ncol=len(cats_c), bbox_to_anchor=(0, 1),
                       loc='lower left', fontsize='small')
 
-        return ax, rects, data
+        #  ---------
+        result = dict(rects=rects, data=data)
+        return dict(ax=ax, result=result)
+
+    # -----------------------------------------------------
+    #  special
+
+    def blank(ax, variable, factor, cats, cat_colors, cmap, title="", *args, **kwargs):
+        """"""
+        h.set_title(ax, title, titlecolor)
+        #  ---------
+        ax.plot()
+        ax.axis('off')
+        ax.text(
+            0.5, 0.5, '',
+            verticalalignment='center', horizontalalignment='center',
+            transform=ax.transAxes,
+            color='gray', fontsize=10)
+        return dict(ax=ax, result=False)
 
     def error(ax, title="error"):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
         ax.plot()
         ax.axis('off')
-        ax.text(0.5, 0.5, 'unavailable',
+        ax.text(
+            0.5, 0.5, 'unavailable',
             verticalalignment='center', horizontalalignment='center',
             transform=ax.transAxes,
             color='gray', fontsize=10)
-        return ax, False
+        return dict(ax=ax, result=False)
 
-    def blank(ax, title="", *args, **kwargs):
-        """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
-        ax.plot()
-        ax.axis('off')
-        ax.text(0.5, 0.5, 'unavailable',
-            verticalalignment='center', horizontalalignment='center',
-            transform=ax.transAxes,
-            color='gray', fontsize=10)
-        return ax, False
-
-
-    ##-----------------------------------------------------
-    ##
+    # -----------------------------------------------------
+    #
     PLOTS = {
-        "boxplots":  {"plot": boxplots, "name": "box-plots"},
-        "cloud":     {"plot": cloud, "name": "scatter"},
+        "boxplots": {"plot": boxplots, "name": "box-plots"},
+        "cloud": {"plot": cloud, "name": "scatter"},
         "grouped_cloud": {"plot": grouped_cloud, "name": "grouped cloud"},
         "densities": {"plot": densities, "name": "densities"},
-        "barchart":  {"plot": barchart, "name": "bar chart"},
-        "error":     {"plot": error, "name": "error"},
-        "blank":     {"plot": blank, "name": ""},
-        }
+        "distr": {"plot": distr, "name": "distributions"},
+        "rocs": {"plot": rocs, "name": "rocs"},
+        "barchart": {"plot": barchart, "name": "bar chart"},
+        "blank": {"plot": blank, "name": ""},
+        "error": {"plot": error, "name": "error"},
+    }
 
+    # -------------------------------------------------------------------------
+    #  plotting procedure
 
-    ##-------------------------------------------------------------------------
-    ## plotting procedure
-
-    ##-----------------------------------------------------
-    ## sizes
+    # -----------------------------------------------------
+    #  sizes
     def set_fig(nrows=1, ncols=1):
         nonlocal size
         nonlocal height
@@ -577,7 +674,7 @@ def plot_covariates(variable, covariate, data=None,
         nonlocal figheight
         nonlocal figwidth
 
-        if nrows==0 or ncols==0:
+        if nrows == 0 or ncols == 0:
             """
             for uneven (custom) figure split into axes
             see  numeric_vs_numeric()  ->  cloud()
@@ -602,7 +699,7 @@ def plot_covariates(variable, covariate, data=None,
 
                 if figheight is None:
                     height = size if height is None else height
-                    figheight = height * nrows + 1     #? +1 ?
+                    figheight = height * nrows + 1     # ? +1 ?
 
                 if figwidth is None:
                     width = size * width_adjust if width is None else width
@@ -611,23 +708,49 @@ def plot_covariates(variable, covariate, data=None,
                 figsize = figwidth, figheight
 
             fig, axs = plt.subplots(figsize=figsize, nrows=nrows, ncols=ncols)
-        #axs = np.reshape(axs, (nrows, ncols))    # unfortunately it's necessary because ...
+        # axs = np.reshape(axs, (nrows, ncols))    # unfortunately it's necessary because ...
 
         return fig, axs
 
-    ##-----------------------------------------------------
-    ##
-    def sample(xx, yy):
-        """  """
-        df = pd.concat([xx, yy], axis=1, ignore_index=False)
-        if n_obs and n_obs < len(df):
-            df = df.sample(int(n_obs), ignore_index=False, random_state=random_state)
-        if shuffle:
-            df = df.sample(frac=1, ignore_index=True, random_state=random_state)
-        xx = df[xx.name]
-        yy = df[yy.name]
-        return xx, yy
+    # -----------------------------------------------------
+    #
 
+    def numeric_vs_numeric():
+        """"""
+        nonlocal result
+        nonlocal variable, covariate
+        nonlocal df
+        nonlocal color
+        nonlocal s
+        nonlocal alpha
+        nonlocal color_data
+
+        fig, _ = set_fig(0)
+
+        # statistics:
+        if print_info:  # of course!
+            print()
+            print(" 2. statistics for processed data")
+            print(df_variation)
+            print()
+            print(df_distribution)
+
+        variable, covariate, color, s, alpha, color_data = \
+            sample_and_align(variable, covariate, n_obs=n_obs, shuffle=shuffle, random_state=random_state,
+                             color=color, s=s, alpha=alpha, color_data=color_data)
+
+        resc = cloud(fig, title=title)   # fig, axes, result
+
+        h.set_xscale(resc['axes']['ax'], coalesce(xscale, scale))
+        h.set_xscale(resc['axes']['ax_histx'], coalesce(xscale, scale))
+
+        h.set_yscale(resc['axes']['ax'], coalesce(yscale, scale))
+        h.set_yscale(resc['axes']['ax_histy'], coalesce(yscale, scale))
+
+        result['plot']["cloud"] = {'axes': resc['axes'], 'result': resc['result']}
+        fig = resc['fig']
+
+        return fig
 
     def numeric_vs_factor(num, fac, most_common):
         """"""
@@ -635,8 +758,13 @@ def plot_covariates(variable, covariate, data=None,
         nonlocal df0
         nonlocal df
         nonlocal what
+        nonlocal cmap
+        nonlocal color
+        nonlocal s
+        nonlocal alpha
+        nonlocal color_data
 
-        ## --------------------------------------
+        #  --------------------------------------
         # for potentially processed data    -- but NOT sampled yet (i.e. always all data!)
         df1 = pd.concat([num, fac], axis=1)
         df1agg = df1.groupby([fac.name]).agg([len, np.mean])
@@ -649,65 +777,57 @@ def plot_covariates(variable, covariate, data=None,
 
             df1agg = pd.merge(df1agg, df0agg, left_index=True, right_index=True, how='left')
 
-        ##---------------------------------------
-        ## figure and plots sizes
-        what = np.array(what, ndmin=2)
-        nrows = what.shape[0]
-        ncols = what.shape[1]
-
-
-        fig, axs = set_fig(nrows, ncols)
-        axs = np.reshape(axs, (nrows, ncols))    # unfortunately it's necessary because ...
-
-        cats, cat_colors, cmap = cats_and_colors(fac, most_common)
-
-        for t in ["boxplots", "blank"]:
-            if t in what:
-                ax = axs[np.nonzero(what==t)][0]
-                try:
-                    result[t] = PLOTS[t]["plot"](ax, num, fac, cats, cat_colors, cmap, PLOTS[t]["name"])
-                    set_xscale(ax, xscale)
-                except Exception as e:
-                    print(e)
-                    result[t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
-
-                    #!
-                    #result["boxplots"] = boxplots(axs[2], num, fac, cats, cat_colors, cmap)
-
-        num, fac = sample(num, fac)
-
-        for t in ["grouped_cloud", "densities"]:
-            if t in what:
-                ax = axs[np.nonzero(what==t)][0]
-                try:
-                    result[t] = PLOTS[t]["plot"](ax, num, fac, cats, cat_colors, cmap, PLOTS[t]["name"])
-                    # if lines and not isinstance(bins, int):
-                    #     for l, c in zip(bins, np.vstack([cmap.colors, cmap.colors[-1]])):
-                    #         ax.axvline(l, color=c, alpha=.3)
-                    set_xscale(ax, xscale)
-                except Exception as e:
-                    print(e)
-                    result[t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
-
-                    #!
-                    #result["grouped_cloud"] = grouped_cloud(axs[0], num, fac, cats, cat_colors, cmap)
-                    #result["densities"] = densities(axs[1], num, fac, cats, cat_colors, cmap)
-
         # statistics:
         if print_info:  # of course!
             print()
             print(" 2. statistics for processed data")
             print(df_variation)
+            print()
             print(df1agg)
 
-        result["agg"] = df1agg
+        # ---------------------------------------
+        #  figure and plots sizes
+        what = np.array(what, ndmin=2)
+        nrows = what.shape[0]
+        ncols = what.shape[1]
+
+        fig, axs = set_fig(nrows, ncols)
+        axs = np.reshape(axs, (nrows, ncols))    # unfortunately it's necessary because ...
+
+        cats, cat_colors, cmap = cats_and_colors(fac, most_common, cmap)
+
+        for t in ["boxplots", "blank"]:
+            if t in what:
+                ax = axs[np.nonzero(what == t)][0]
+                try:
+                    result['plot'][t] = PLOTS[t]["plot"](ax, num, fac, cats, cat_colors, cmap, PLOTS[t]["name"])
+                except Exception as e:
+                    print(e)
+                    result['plot'][t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
+
+        num, fac, color, s, alpha, color_data = \
+            sample_and_align(num, fac, n_obs=n_obs, shuffle=shuffle, random_state=random_state,
+                             color=color, s=s, alpha=alpha, color_data=color_data)
+
+        for t in ["grouped_cloud", "densities", "distr", "rocs"]:
+            if t in what:
+                ax = axs[np.nonzero(what == t)][0]
+                try:
+                    result['plot'][t] = PLOTS[t]["plot"](ax, num, fac, cats, cat_colors, cmap, PLOTS[t]["name"])
+                    # if lines and not isinstance(bins, int):
+                    #     for l, c in zip(bins, np.vstack([cmap.colors, cmap.colors[-1]])):
+                    #         ax.axvline(l, color=c, alpha=.3)
+                except Exception as e:
+                    print(e)
+                    result['plot'][t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
+
+        result['plot']["agg"] = df1agg
 
         return fig
 
-
     def factor_vs_factor():
         """
-        TODO: this is very crude version -- TEST IT - FIX IT !!!
+        this is very crude version -- TEST IT - FIX IT !!!
         """
         nonlocal result
         nonlocal height
@@ -722,7 +842,9 @@ def plot_covariates(variable, covariate, data=None,
 
         fig, axs = set_fig(nrows=1, ncols=1)
         ax, rects, data = barchart(axs, title=title)
-        result["barchart"] = ax, rects, data
+        # set_axescolor(ax, axescolor)
+
+        result['plot']["barchart"] = ax, rects, data
 
         # statistics:
         if print_info:  # of course!
@@ -734,38 +856,9 @@ def plot_covariates(variable, covariate, data=None,
 
         return fig
 
+    # -----------------------------------------------------
+    #  core
 
-    def numeric_vs_numeric():
-        """"""
-        nonlocal result
-        nonlocal variable, covariate
-
-        fig, _ = set_fig(0)
-
-        # statistics:
-        if print_info:  # of course!
-            print()
-            print(" 2. statistics for processed data")
-            print(df_variation)
-            print()
-            print(df_distribution)
-
-        variable, covariate = sample(variable, covariate)
-
-        fig, ax, scatter, ax_histx, histx, ax_histy, histy, qqx, qqy = cloud(fig, title=title)
-
-        set_xscale(ax, xscale)
-        set_xscale(ax_histx, xscale)
-
-        set_yscale(ax, yscale)
-        set_yscale(ax_histy, yscale)
-
-        result["cloud"] = ax, scatter, ax_histx, histx, ax_histy, histy, qqx, qqy
-
-        return fig
-
-    ##-----------------------------------------------------
-    ## core
     if is_factor_y:
         n_levels_variable = len(variable.cat.categories)
 
@@ -786,19 +879,16 @@ def plot_covariates(variable, covariate, data=None,
 
             fig = numeric_vs_numeric()
 
+    # -------------------------------------------------------------------------
+    #  final
 
-    ##-------------------------------------------------------------------------
-    ## final
+    h.set_figtitle(fig, title, suptitlecolor, suptitlesize)
 
-    if suptitlecolor:
-        fig.suptitle(title, fontweight='normal', color=suptitlecolor, fontsize=15 * suptitlesize)
-    else:
-        fig.suptitle(title, fontweight='normal', fontsize=15 * suptitlesize)
     fig.tight_layout()
-    plt.show()
+    # plt.show()
 
-    result["fig"] = fig
+    result['plot']["fig"] = fig
 
     return None if not res else result
 
-#%%
+# %%

@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ---
@@ -6,9 +6,8 @@
 # !!! YAML message always begin with ---
 
 title: Transformators according to instructions
-project: Empirica
 version: 1.0
-type: module             # module, analysis, model, tutorial, help, example, ...
+type: module
 keywords: [transformer, variables, instructions]
 description: |
     Variables transformers according to instructions from some config lists/dicts/etc.
@@ -17,20 +16,10 @@ remarks:
 todo:
     - problem 1
 sources:
-    - title:
-      chapter:
-      pages:
-      link: https://the_page/../xxx.domain
-      date:    # date of issue or last edition of the page
-      authors:
-          - nick:
-            fullname:
-            email:
-      usage: |
 file:
     usage:
-        interactive: True   # if the file is intended to be run interactively e.g. in Spyder
-        terminal: False     # if the file is intended to be run in a terminal
+        interactive: False   # if the file is intended to be run interactively e.g. in Spyder
+        terminal: False      # if the file is intended to be run in a terminal
     date: 2022-02-10
     authors:
         - nick: arek
@@ -39,25 +28,19 @@ file:
               - arkadiusz.kasprzyk@quantup.pl
 """
 
-#%%
+# %%
 import sys
 sys.path.insert(1, "../")
 
-#import numpy as np
+# import numpy as np
 import pandas as pd
-
-#from functools import partial
-
-#import utils.df as df
-# from utils.plots import plot_variable   # circular dependence :(
-#from utils.builtin import flatten, coalesce
 
 from sklearn.preprocessing import PowerTransformer
 from sklearn.exceptions import NotFittedError
 
-#%%
 
-def process_ss(ss, np_name = "from_numpy_array"):
+# %%
+def process_ss(ss, np_name="from_numpy_array"):
     try:
         shape = ss.shape
     except AttributeError:
@@ -98,6 +81,7 @@ def from_sklearn_inverse(transformer, name="T_inverse"):
     else:
         if not name:
             name = transformer.__name__ + "_inverse"
+
         def standardised(ss):
             ss, sname, idx = process_ss(ss)
 
@@ -105,14 +89,17 @@ def from_sklearn_inverse(transformer, name="T_inverse"):
 
             ss = pd.Series(ss, index=idx)
             ss.name = sname
-            #t_inverse.__func__.__name__ = name   #?  is this possible to make it more informative e.g. via .get_params()  ?
+            # t_inverse.__func__.__name__ = name
+            # ?  is this possible to make it more informative e.g. via .get_params()  ?
+
             return ss
+
         standardised.__name__ = name
 
     return standardised
 
 
-## more general
+# more general
 def from_sklearn(transformer, name="T"):
     """
     transformer: sklearn transformer with .transform() and .fit_transform() methods;
@@ -157,7 +144,9 @@ def from_sklearn(transformer, name="T"):
 
             ss = pd.Series(ss, index=idx)
             ss.name = sname
-            #transformer.__name__ = name          #?  is this possible to make it more informative e.g. via .get_params()  ?
+            # transformer.__name__ = name
+            # ?  is this possible to make it more informative e.g. via .get_params()  ?
+
             return ss, from_sklearn(transformer, name)
 
         standardised.__name__ = name
@@ -189,7 +178,8 @@ def power_transformer(ss: pd.Series):
 
     return ss, from_sklearn(transformer, t_name)
 
-#%%
+
+# %%
 """
 ss = data_raw['minMidpointDistanceStd']
 ss = data_raw.loc[:, ['minMidpointDistanceStd']]
@@ -204,12 +194,12 @@ zz, transformer = power_transformer(ss)
 transformer.__name__
 """
 
-#%%
 
-def transform( data: pd.DataFrame,
+# %%
+def transform(
+        data: pd.DataFrame,
         transformations: dict(),
-        inverse: bool = False,
-        ):
+        inverse: bool = False, ):
     """"""
     columns = set(data.columns).intersection(transformations.keys())
     data_0 = data.copy()
@@ -252,7 +242,7 @@ def transform( data: pd.DataFrame,
                             # from_sklearn_inverse()  is idempotent so it's safe
                             # although  `... = transformer.inverse_transform`  would more straightforward;
                             # result is exactly the same!
-                    except:
+                    except Exception:
                         ss = item["forward"](ss)
 
                 if item["lower_t"]:
@@ -265,4 +255,4 @@ def transform( data: pd.DataFrame,
     return data_0, transformations
 
 
-#%%
+# %%

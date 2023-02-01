@@ -1,5 +1,5 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#! python3
 """
 ---
 # This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
@@ -28,9 +28,8 @@ description: |
     This allows to do well with difficult cases like numeric variables with
     small nr of different values (better to plot it as categorical)
     or categorical variables with large number of different values
-    (better to (bar)plot only most common values).
+    (better to (bar)plot only most common values), etc.
 content:
-    -
 remarks:
 todo:
 sources:
@@ -45,15 +44,26 @@ file:
               - arkadiusz.kasprzyk@quantup.pl
 """
 
+# %%
+from typing import Iterable
 
-#%%
-from .helpers import *
+import numpy as np
+import pandas as pd
+from scipy.stats import gaussian_kde
 
-#%%
+# import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+from common.builtin import coalesce
+import common.df as cdf
+import common.plots.helpers as h
+
+
+# %%
 def plot_numeric(
         variable, data=None,
         what=[["hist", "cloud", "density"], ["agg", "boxplot", "distr"]],
-        varname=None, title=None,
+        varname=None, title=None, title_suffix=None,
         # Variable modifications (before plotting)
         lower=None, upper=None, exclude=None,
         transform=False,
@@ -62,18 +72,18 @@ def plot_numeric(
         bins=7, agg=sum,
         n_obs=int(1e4), shuffle=False, random_state=None,
         # Graphical parameters
-        figsize=None, figwidth=None, figheight=None, # for the whole figure
-        width=None, height=None, size=5, width_adjust=1.2, # for the single plot
+        figsize=None, figwidth=None, figheight=None,  # for the whole figure
+        width=None, height=None, size=5, width_adjust=1.2,  # for the single plot
         scale="linear",
         lines=True,
-        cmap="Paired",  # for coloring of bars in "hist" and respective points of "agg"
-        alpha=None, s=9,   # alpha and size of a data point in a "cloud"
-        style=True, color=None, grid=True, titlecolor=None,
-        suptitlecolor=None, suptitlesize=1., # multiplier of 15
+        cmap="Set2",  # for coloring of bars in "hist" and respective points of "agg"
+        color=None, s=9, alpha=None, brightness=None,  # alpha, size and brightness of a data point in a "cloud"
+        ignore_index=False,
+        style=True, grid=True, axescolor=None, titlecolor=None,
+        suptitlecolor=None, suptitlesize=1.,  # multiplier of 15
         #
         print_info=True, res=False,
-        *args, **kwargs
-        ):
+        *args, **kwargs):
     """
     Remarks:
         - `style` is True by default what means using style set up externally
@@ -152,13 +162,13 @@ def plot_numeric(
     Graphical parameters
     --------------------
 
-    ## Sizes for the whole figure
-        Theses params overwrite single-plot-sizes params.
+    #  Sizes for the whole figure
+        These params overwrite single-plot-sizes params.
     figsize : None; tuple of numerics (figwidth, figheight)
     figwidth : None; numeric
     figheight : None; numeric
 
-    ## Sizes for the single plot
+    #  Sizes for the single plot
         If width and height are None they are
     width : None; numeric
         = size if is None
@@ -170,10 +180,12 @@ def plot_numeric(
         if width not set up directly then `width = size * width_adjust`
     scale : "linear"
     lines : True; boolean
-    cmap : "Paired";
+    cmap : "ak01";
         color map name;
         see https://matplotlib.org/stable/tutorials/colors/colormaps.html#sphx-glr-tutorials-colors-colormaps-py
         or dir(matplotlib.pyplot.cm) for list of all available color maps;
+        see https://matplotlib.org/stable/tutorials/colors/colormap-manipulation.html#creating-colormaps-in-matplotlib
+        on how to create and register ListedColormaps.
     alpha : None; float between 0 and 1
         for points of "cloud" only;
     s : .1; float;
@@ -196,7 +208,7 @@ def plot_numeric(
     titlecolor : None; str
         color of axis titles;
     suptitlecolor : None; str
-        colro of the whole title plot (fig.suptitle)
+        color of the whole title plot (fig.suptitle)
     suptitlesize : 1.; float
         multiplier of 15 for the whole title plot (fig.suptitle)
 
@@ -215,60 +227,45 @@ def plot_numeric(
     dictionary of everything...
     """
 
-    ##-------------------------------------------------------------------------
-    ## loading data
+    # -------------------------------------------------------------------------
+    #  loading data
 
-    if isinstance(variable, str):
-        varname = variable
-        variable = data[variable]
-    else:
-        if varname is None:
-            varname = coalesce(variable.name, "X")
+    variable, varname = h.get_var_and_name(variable, data, varname, "X")
 
-    ##-----------------------------------------------------
-    ## info on raw variable
-    var_info = info(pd.DataFrame(variable), what = ["dtype", "oks", "oks_ratio", "nans_ratio", "nans"])
+    # !!! index is ABSOLUTELY CRITICAL here !!!
+    if ignore_index:
+        variable, color, s, alpha = cdf.align_indices(variable, color, s, alpha)
+
+    # -----------------------------------------------------
+    #  info on raw variable
+    var_info = cdf.info(pd.DataFrame(variable), what=["dtype", "oks", "oks_ratio", "nans_ratio", "nans", "uniques"])
 
     if print_info:
         print(" 1. info on raw variable")
         print(var_info)
 
-    ##-------------------------------------------------------------------------
-    ## preparing data
+    # -------------------------------------------------------------------------
+    #  preparing data
 
     variable = variable.dropna()
-    variable.index = range(len(variable))
 
-    ##-----------------------------------------------------
-    ## transformation and clipping
-    if not lower is None:
-        variable = variable[variable >= lower]
-    if not upper is None:
-        variable = variable[variable <= upper]
-    if not exclude is None:
-        variable = variable[~ variable.isin(flatten([exclude]))]
+    # -----------------------------------------------------
+    #  transformation and clipping
 
-    transform = coalesce(transform, False)
-    if transform:
-        if isinstance(transform, bool):
-            variable, transform = power_transformer(variable)
-        else:
-            transform.__name__ = coalesce(transform.__name__, "T")  # function always have name so it's spurious
-            variable = pd.Series(transform(variable))
+    variable, transname = h.clip_transform(
+        variable,
+        upper, lower, exclude,
+        transform, upper_t, lower_t, exclude_t, "T")
 
-        if not lower_t is None:
-            variable = variable[variable >= lower_t]
-        if not upper_t is None:
-            variable = variable[variable <= upper_t]
-        if not exclude_t is None:
-            variable = variable[~ variable.isin(flatten([exclude_t]))]
+    # -----------------------------------------------------
+    #  statistics for processed variable
 
-    ##-----------------------------------------------------
-    ## statistics for processed variable
-    var_variation = summary(pd.DataFrame(variable),
+    var_variation = cdf.summary(
+        pd.DataFrame(variable),
         what=["oks", "uniques", "most_common", "most_common_ratio", "most_common_value", "dispersion"])
 
-    var_distribution = summary(pd.DataFrame(variable),
+    var_distribution = cdf.summary(
+        pd.DataFrame(variable),
         what=["range", "iqr", "mean", "median", "min", "max", "negatives", "zeros", "positives"])
 
     if print_info:
@@ -278,188 +275,223 @@ def plot_numeric(
         print()
         print(var_distribution)
 
-    ##-----------------------------------------------------
-    ## title
+    # -----------------------------------------------------
+    #  title
 
-    title = make_title(varname, lower, upper, transform, lower_t, upper_t)
+    if not title:
+        title = h.make_title(varname, lower, upper, transname, lower_t, upper_t)
 
-    ##-----------------------------------------------------
+    if title_suffix:
+        title = title + title_suffix
+
+    # -----------------------------------------------------
 
     counts = None
     aggs = None
 
-    ## ----------------------------------------------------
-    ## !!! result !!!
+    # ----------------------------------------------------
+    # !!! result !!!
 
-    result = { "title" : title,
-        "variable" : variable,    # processed
-        "info" : var_info,
-        "variation": var_variation,
+    result = {
+        "title": title,
+        "variable": variable,    # processed
+        "info": var_info,
+        "variation": var_variation,     # variable after all prunings and transformations
         "distribution": var_distribution,
-        }  # variable after all prunings and transformations
+        "plot": dict()}
 
-    ##---------------------------------------------------------------------------------------------
-    ## plotting
+    # ---------------------------------------------------------------------------------------------
+    #  plotting
 
     len_bins = len(bins) - 1 if isinstance(bins, list) else bins
-    cm = mpl.cm.get_cmap(cmap, len_bins)
+    cmap = h.get_cmap(cmap, len_bins)
 
-    ##-------------------------------------------------------------------------
-    ## style affairs
+    # -------------------------------------------------------------------------
+    #  style affairs
 
     N = len(variable) if not n_obs else min(len(variable), int(n_obs))
-    style, color, grid, suptitlecolor, titlecolor, alpha = \
-        style_affairs(style, color, grid, suptitlecolor, titlecolor, alpha, N)
 
-    ##-------------------------------------------------------------------------
-    ## helpers
-    ## TODO: implement them as decorators !
+    # !!! get  color, s, alhpa  from data if they are proper column names !!!
 
-    ##-------------------------------------------------------------------------
-    ## plot types
+    if isinstance(alpha, str):
+        alpha = data[alpha]
+
+    if isinstance(s, str):
+        s = data[s]
+
+    # take color from data only if it's not a color name
+    if isinstance(color, str) and not h.is_mpl_color(color) and color in data.columns:
+        color = data[color]
+
+    color_data = color
+    if not isinstance(color, str) and isinstance(color, Iterable):
+        color = None
+
+    style, color, grid, axescolor, suptitlecolor, titlecolor, brightness, alpha = \
+        h.style_affairs(style, color, grid, axescolor, suptitlecolor, titlecolor, brightness, alpha, N)
+
+    if color_data is None:
+        color_data = color
+
+    # -------------------------------------------------------------------------
+    #  plot types
 
     def hist(ax, title=None):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
         nonlocal bins
         nonlocal counts
         counts, bins, patches = ax.hist(variable, bins=bins)
-        for p, c in zip(patches.patches, cm.colors):
+        for p, c in zip(patches.patches, cmap.colors):
             p.set_color(c)
-        ## ---------
+        #  ---------
         # ax.set_xscale(scale)                  # ???
-        set_grid(ax, off="x", grid=grid)
-        return ax, counts, bins, patches
+        h.set_grid(ax, off="x", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        result = dict(counts=counts, bins=bins, patches=patches)
+        return dict(ax=ax, result=result)
 
     def agg_vs_count(ax, title=None):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
         nonlocal bins
         nonlocal counts
         nonlocal aggs
         if counts is None:
             counts, bins = np.histogram(variable, bins=bins)
-        aggs, bins = agg_for_bins(variable, bins, agg)
-        scatter = ax.scatter(counts, aggs,
-            s=50, color=cm.colors, marker="D"
-            )
-        ## ---------
-        set_grid(ax, off="both", grid=grid)
-        return ax, aggs, bins, scatter
+        aggs, bins = h.agg_for_bins(variable, bins, agg)
+        scatter = ax.scatter(
+            counts, aggs,
+            s=50, color=cmap.colors, marker="D")
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_yscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        result = dict(aggs=aggs, bins=bins, scatter=scatter)
+        return dict(ax=ax, result=result)
 
     def boxplot(ax, title=None):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
-        result = ax.boxplot(variable,
+        h.set_title(ax, title, titlecolor)
+        # ---------
+        result = ax.boxplot(
+            variable,
             vert=False,
             notch=True,
             #
-            patch_artist = True,                              #!!!
-            boxprops = dict(color=color, facecolor=color),
-            whiskerprops = dict(color=color),
-            capprops = dict(color=color),
-            flierprops = dict(color=color, markeredgecolor=color, marker="|"),
-            medianprops = dict(color= 'gray' if color in ['k', 'black'] else 'k'),
+            patch_artist=True,                              # !!!
+            boxprops=dict(color=color, facecolor=color),
+            whiskerprops=dict(color=color),
+            capprops=dict(color=color),
+            flierprops=dict(color=color, markeredgecolor=color, marker="|"),
+            medianprops=dict(color='gray' if color in ['k', 'black'] else 'k'),
             #
-            showmeans = True,
-            #meanline = False,
-            meanprops = dict(#color='white' if color in ['k', 'black'] else 'k',
+            showmeans=True,
+            # meanline=False,
+            meanprops=dict(  # color='white' if color in ['k', 'black'] else 'k',
                              marker="d",
                              markeredgecolor=color,
-                             markerfacecolor='white' if color in ['k', 'black'] else 'k', markersize=17)
-            )
-        ## ---------
-        set_xscale(ax, scale)
-        set_grid(ax, off="y", grid=grid)
-        return ax, result
-
-    def cloud(ax, title=None):
-        """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
-        result = ax.scatter(variable, variable.index, s=s, color=color, alpha=alpha)
-        ## ---------
-        set_xscale(ax, scale)
-        set_grid(ax, off="both", grid=grid)
-        return ax, result
+                             markerfacecolor='white' if color in ['k', 'black'] else 'k', markersize=17))
+        # ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="y", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        return dict(ax=ax, result=result)
 
     def density(ax, title=None):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        # ---------
         try:
             density = gaussian_kde(variable.astype(float))
         except Exception:
             density = gaussian_kde(variable)
         xx = np.linspace(min(variable), max(variable), 200)
-        result = ax.plot(xx, density(xx), color=color)  # list of `.Line2D`
-        ## ---------
-        set_xscale(ax, scale)
-        set_grid(ax, off="both", grid=grid)
-        return ax, xx, result
+        lines = ax.plot(xx, density(xx), color=color)  # list of `.Line2D`
+        # ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        result = dict(xx=xx, lines=lines)
+        return dict(ax=ax, result=result)
+
+    def cloud(ax, title=None):
+        """"""
+        h.set_title(ax, title, titlecolor)
+        # ---------
+        result = ax.scatter(variable, range(len(variable)), s=s, color=color_data, alpha=alpha)
+        # ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        return dict(ax=ax, result=result)
 
     def distr(ax, title=None):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
-        result = ax.scatter(*distribution(variable), s=.1, color=color)
+        h.set_title(ax, title, titlecolor)
+        #  ---------
+        # # line version
+        # result = ax.plot(*h.distribution(variable), color=color, linewidth=1)
+        # dots version
+        result = ax.scatter(*h.distribution(variable), s=.1, color=color_data)
         # `~matplotlib.collections.PathCollection`
-        ## ---------
-        set_xscale(ax, scale)
-        set_grid(ax, off="both", grid=grid)
-        return ax, result
-
-    def error(ax, title=None):
-        """"""
-        set_title(ax, title, titlecolor)
-        ## --------
-        ax.plot()
-        ax.axis('off')
-        ax.text(0.5, 0.5, 'unavailable',
-            verticalalignment='center', horizontalalignment='center',
-            transform=ax.transAxes,
-            color='gray', fontsize=10)
-        return ax, False
+        #  ---------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="both", grid=grid)
+        # set_axescolor(ax, axescolor)
+        #
+        return dict(ax=ax, result=result)
 
     def blank(ax, title="", text="", *args, **kwargs):
         """"""
-        set_title(ax, title, titlecolor)
-        ## ---------
+        h.set_title(ax, title, titlecolor)
+        #  ---------
         ax.plot()
         ax.axis('off')
-        ax.text(0.5, 0.5, text,
+        ax.text(
+            0.5, 0.5, text,
             verticalalignment='center', horizontalalignment='center',
             transform=ax.transAxes,
             color='gray', fontsize=10)
-        return ax, False
+        return dict(ax=ax, result=False)
+
+    def error(ax, title=None):
+        """"""
+        h.set_title(ax, title, titlecolor)
+        #  --------
+        ax.plot()
+        ax.axis('off')
+        ax.text(
+            0.5, 0.5, 'unavailable',
+            verticalalignment='center', horizontalalignment='center',
+            transform=ax.transAxes,
+            color='gray', fontsize=10)
+        return dict(ax=ax, result=False)
 
     PLOTS = {
-        "hist":    {"plot": hist, "name": "histogram"},
+        "hist": {"plot": hist, "name": "histogram"},
         "boxplot": {"plot": boxplot, "name": "box-plot"},
-        "agg":     {"plot": agg_vs_count, "name": f"{agg.__name__} vs count"},
-        "cloud":   {"plot": cloud, "name": "cloud"},
+        "agg": {"plot": agg_vs_count, "name": f"{agg.__name__} vs count"},
+        "cloud": {"plot": cloud, "name": "cloud"},
         "density": {"plot": density, "name": "density"},
-        "distr":   {"plot": distr, "name": "distribution"},
-        "error":   {"plot": error, "name": "error"},
-        "blank":   {"plot": blank, "name": ""},
-        }
+        "distr": {"plot": distr, "name": "distribution"},
+        "blank": {"plot": blank, "name": ""},
+        "error": {"plot": error, "name": "error"},
+    }
 
-    ## ------------------------------------------------------------------------
-    ## plotting procedure
+    # ------------------------------------------------------------------------
+    #  plotting procedure
 
-    def sample(var):
-        """  """
-        if n_obs and n_obs < len(var):
-            var = var.sample(n_obs, ignore_index=False, random_state=random_state)
-        if shuffle:
-            var = var.sample(frac=1, ignore_index=True, random_state=random_state)
-        return var
-
-    ##-----------------------------------------------------
-    ## figure and plots sizes
+    # -----------------------------------------------------
+    #  figure and plots sizes
     what = np.array(what, ndmin=2)
     nrows = what.shape[0]
     ncols = what.shape[1]
@@ -468,7 +500,7 @@ def plot_numeric(
 
         if figheight is None:
             height = size if height is None else height
-            figheight = height * nrows + 1     #? +1 ?
+            figheight = height * nrows + 1     # ? +1 ?
 
         if figwidth is None:
             width = size * width_adjust if width is None else width
@@ -476,73 +508,80 @@ def plot_numeric(
 
         figsize = figwidth, figheight
 
-    ## ----------------------------------------------------
-    ## core
+    # ----------------------------------------------------
+    #  core
+
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
     axs = np.reshape(axs, (nrows, ncols))    # unfortunately it's necessary because ...
 
-
     for t in ["hist", "boxplot", "agg", "blank"]:
         if t in what:
-            ax = axs[np.nonzero(what==t)][0]
+            ax = axs[np.nonzero(what == t)][0]
             try:
-                result[t] = PLOTS[t]["plot"](ax, PLOTS[t]["name"])
+                result['plot'][t] = PLOTS[t]["plot"](ax, PLOTS[t]["name"])
             except Exception as e:
                 print(e)
-                result[t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
+                result['plot'][t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
 
-    variable = sample(variable)
+    variable = h.sample(variable, n_obs, shuffle, random_state)
+    variable, color, s, alpha, color_data = \
+        cdf.align_nonas(variable, color=color, s=s, alpha=alpha, color_data=color_data)
 
     for t in ["cloud", "density", "distr"]:
         if t in what:
-            ax = axs[np.nonzero(what==t)][0]
+            ax = axs[np.nonzero(what == t)][0]
             try:
-                result[t] = PLOTS[t]["plot"](ax, PLOTS[t]["name"])
+                result['plot'][t] = PLOTS[t]["plot"](ax, PLOTS[t]["name"])
                 if lines and not isinstance(bins, int):
-                    for l, c in zip(bins, np.vstack([cm.colors, cm.colors[-1]])):
+                    for l, c in zip(bins, np.vstack([cmap.colors, cmap.colors[-1]])):
                         ax.axvline(l, color=c, alpha=.3)
             except Exception as e:
                 print(e)
-                result[t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
+                result['plot'][t] = PLOTS["error"]["plot"](ax, PLOTS[t]["name"])
 
-    ##-------------------------------------------------------------------------
-    ## final
+    result['plot']['axs'] = axs
+
+    # -------------------------------------------------------------------------
+    #  final
 
     if print_info:
         print()
-        print("  For histogram groups:")
+        if isinstance(bins, Iterable):
+            print("  For histogram groups:")
+            #
+            print("bins: [", end="")
+            print(", ".join(f"{b:.2g}" for b in bins), end="")
+            print("]")
         #
-        print( "bins: [", end="")
-        print(", ".join(f"{b:.2g}" for b in bins), end="")
-        print("]")
-        #
-        print(f"counts: {counts}")
-        aggs_rounded = [round(a) for a in aggs]
-        print(f"{agg.__name__}: {aggs_rounded}")
+        if aggs:
+            print(f"counts: {counts}")
+            aggs_rounded = [round(a) for a in aggs]
+            print(f"{agg.__name__}: {aggs_rounded}")
 
-    if suptitlecolor:
-        fig.suptitle(title, fontweight='bold', color=suptitlecolor, fontsize=15 * suptitlesize)
-    else:
-        fig.suptitle(title, fontweight='bold', fontsize=15 * suptitlesize)
+    h.set_figtitle(fig, title, suptitlecolor, suptitlesize)
+
     fig.tight_layout()
-    plt.show()
+    # plt.show()
 
-    result["fig"] = fig
+    result['plot']["fig"] = fig
 
     return None if not res else result
 
 
-#%%
-#%%
+# %%
 def plot_factor(
-        variable, data=None, varname=None, title=None,
-        most_common=13, sort_levels=False, print_levels=False,
+        variable, data=None, varname=None, title=None, title_suffix=None,
+        most_common=13, print_levels=False,  # prints all levels regardless of `most_common`
+        sort_levels=False, ascending=None,  # adopts to `sort_levels`
+        dropna=False,
         # Graphical parameters
-        figsize=None, figwidth=None, figheight=None, # for the whole figure
-        width=None, height=None, size=5, width_adjust=1.2, barwidth=.5, # for the single plot
-        style=True, color=None, grid=True, titlecolor=None,
-        suptitlecolor=None, suptitlesize=1., # multiplier of 15
+        figsize=None, figwidth=None, figheight=None,  # for the whole figure
+        width=None, height=None, size=5, width_adjust=1.2, barwidth=.5,  # for the single plot
+        scale="linear",
+        style=True, color=None, grid=True, axescolor=None, titlecolor=None,
+        suptitlecolor=None, suptitlesize=1.,  # multiplier of 15
         horizontal=None,
+        labelrotation=75.,
         #
         print_info=True, res=False,
         *args, **kwargs):
@@ -555,6 +594,10 @@ def plot_factor(
     Parameters
     ----------
     - most_common : 13; None or int
+        if None all bars for all factor levels will be plotted;
+        hence using None is dangerous if not sure how many levels there are;
+        it's better to set big integer but no bigger then 100;
+        otherwise plot may not be rendered at all if there are thousands of levels;
 
     Graphical parameters
     --------------------
@@ -563,23 +606,23 @@ def plot_factor(
     consistency with plot_numeric() and for future development
     (other then bars plots for factors).
 
-    ## Sizes for the whole figure
-        Theses params overwrite single-plot-sizes params.
+    #  Sizes for the whole figure
+        These params overwrite single-plot-sizes params.
     figsize : None; tuple of numerics (figwidth, figheight)
     figwidth : None; numeric
     figheight : None; numeric
 
-    ## Sizes for the single plot
+    #  Sizes for the single plot
         If width and height are None they are
     width : None; numeric
         = size if is None
     height : None; numeric
         = size * width_adjust if is None
-    size : 4; numeric
+    size : 5; numeric
         may be None only if width and height are not None or fig-sizes params are not None
     width_adjust : 1.2; numeric
         if width not set up directly then `width = size * width_adjust`
-    barwidth : .3; numeric
+    barwidth : .5; numeric
         width of the single bar;
         if not None then width of the final plot is dependent on the number of levels
         and equals to `barwidth * nr_of_levels`;
@@ -600,91 +643,92 @@ def plot_factor(
     titlecolor : None; str
 
     """
-    ##-----------------------------------------------------
+    # -----------------------------------------------------
 
     if isinstance(variable, str):
         varname = variable
         variable = data[variable]
     else:
         if varname is None:
-            varname = variable.name
+            varname = coalesce(variable.name, "X")
 
-    if title is None:
-        title = varname
+    # -----------------------------------------------------
+    #  info on raw variable
+    var_info = cdf.info(pd.DataFrame(variable), what=["dtype", "oks", "oks_ratio", "nans_ratio", "nans", "uniques"])
 
-    var_info = info(pd.DataFrame(variable), what = ["dtype", "oks", "oks_ratio", "nans_ratio", "nans"])
-    if print_info:
-        print(" 1. info on raw variable")
-        print(var_info)
+    # -------------------------------------------------------------------------
+    #  preparing data
+    ascending = sort_levels if ascending is None else ascending
 
-    ##-----------------------------------------------------
-
-    variable_vc = variable.value_counts()
+    variable_vc = variable.value_counts(ascending=ascending, dropna=dropna)
     n_levels = len(variable_vc)
 
-    if print_levels:
-        if sort_levels:
-            try:
-                print(variable_vc.sort_index(key = lambda k: float(k)))
-            except:
-                print(variable_vc.sort_index())
-        else:
-            print(variable_vc)
-
     if most_common and most_common < n_levels:
-        title = f"{varname} \n most common {most_common} of {n_levels} values"
-        variable_vc = variable_vc.iloc[:most_common]
+        if title is None:
+            title = f"{varname} \n most common {most_common} of {n_levels} values"  # ! 2 lines !
+        levels_info_header = f" {varname} (most common {most_common} levels)"
+        variable_vc = variable_vc.iloc[-most_common:] if ascending else variable_vc.iloc[:most_common]
     else:
         most_common = n_levels
+        if title is None:
+            title = varname
+        levels_info_header = f" {varname} (all {n_levels} levels)"
 
     if sort_levels:
         try:
-            variable_vc = variable_vc.sort_index(key = lambda k: float(k))
-        except:
-            variable_vc = variable_vc.sort_index()
+            variable_vc = variable_vc.sort_index(key=lambda k: float(k), ascending=ascending)
+        except Exception:
+            variable_vc = variable_vc.sort_index(ascending=ascending)
 
-    ##-----------------------------------------------------
-    ## necessary for numerics turned to factors:
+    if title_suffix:
+        title = title + title_suffix
+
+    # -----------------------------------------------------
+    #  necessary for numerics turned to factors:
     levels = variable_vc.index.to_series().astype('str').values
     counts = variable_vc.values.tolist()
 
-    var_variation = summary( pd.DataFrame(variable),
-        what=["oks", "uniques", "most_common", "most_common_ratio", "most_common_value", "dispersion"]
-        )
+    var_variation = cdf.info(
+        pd.DataFrame(variable),
+        what=["oks", "uniques", "most_common", "most_common_ratio", "most_common_value", "dispersion"])
 
     if print_info:
+        print(" 1. info on raw variable")
+        print(var_info)
         print()
-        print(" 2. statistics for processed variable")
+        print(" 2. statistics for processed variable (only most common values)")
         print(var_variation)
         print()
-        print("  categories:")
+
+    if print_levels:
+        # printing all levels is "dangerous" (may be a lot of them) and it's out of this function scope
+        print(levels_info_header)
         print(variable_vc)
 
-    ## ----------------------------------------------------
-    ## !!! result !!!
+    # ----------------------------------------------------
+    #  !!! result !!!
 
-    result = { "title" : title,
-        "variable" : variable,
-        "info" : var_info,
+    result = {
+        "title": title,
+        "variable": variable,
+        "info": var_info,
         "variation": var_variation,
-        "distribution": variable_vc
-        }  # variable after all prunings and transformations
+        "distribution": variable_vc}  # variable after all prunings and transformations
 
-    ##---------------------------------------------------------------------------------------------
-    ## plotting
+    # ---------------------------------------------------------------------------------------------
+    #  plotting
 
-    ##-------------------------------------------------------------------------
-    ## style affairs
+    # -------------------------------------------------------------------------
+    #  style affairs
 
-    style, color, grid, suptitlecolor, titlecolor, alpha = \
-        style_affairs(style, color, grid, suptitlecolor, titlecolor, None, len(variable))
+    style, color, grid, axescolor, suptitlecolor, titlecolor, _brightness, alpha = \
+        h.style_affairs(style, color, grid, axescolor, suptitlecolor, titlecolor, None, None, len(variable))
 
-    ##-------------------------------------------------------------------------
-    ## helpers
-
-    ##-------------------------------------------------------------------------
-    ## sizes
+    # -------------------------------------------------------------------------
+    #  sizes
     if figsize is None:
+
+        n = min(most_common, n_levels)
 
         if figheight is None:
             height = size if height is None else height
@@ -692,7 +736,7 @@ def plot_factor(
 
         if figwidth is None:
             if barwidth:
-                width = barwidth * min(most_common, n_levels) if width is None else width
+                width = barwidth * n if width is None else width
             else:
                 width = size * width_adjust if width is None else width
             figwidth = width
@@ -701,48 +745,58 @@ def plot_factor(
         horizontal = len(levels) < 10
 
     if horizontal:
-        figsize = figheight, figwidth + .7
+        figsize = figheight, figwidth + .8 * n / (n + 2)
+        #
+        levels = levels[::-1]
+        counts = counts[::-1]
     else:
         figsize = figwidth, figheight
 
     fig, ax = plt.subplots(figsize=figsize)
 
-
-    ##-------------------------------------------------------------------------
-    ## plot
+    # -------------------------------------------------------------------------
+    #  plot
 
     if horizontal:
         bars = ax.barh(levels, counts, edgecolor=color, color='darkgray')
-        ## ----------------------------
-        set_grid(ax, off="y", grid=grid)
+        #  ----------------------------
+        h.set_xscale(ax, scale)
+        h.set_grid(ax, off="y", grid=grid)
+        # h.set_axescolor(ax, axescolor)
     else:
         bars = ax.bar(levels, counts, edgecolor=color, color='darkgray')
-        ## ----------------------------
-        set_grid(ax, off="x", grid=grid)
-        ##
-        ax.tick_params(axis='x', labelrotation=75.)
+        #  ----------------------------
+        h.set_yscale(ax, scale)
+        h.set_grid(ax, off="x", grid=grid)
+        # h.set_axescolor(ax, axescolor)
+        ax.tick_params(axis='x', labelrotation=labelrotation)
 
-    result['bars'] = ax, bars
-    ##-----------------------------------------------------
-    ## final
+    result['plot'] = dict(ax=ax, bars=bars)
 
-    if suptitlecolor:
-        fig.suptitle(title, fontweight='normal', color=suptitlecolor, fontsize=15 * suptitlesize)
-    else:
-        fig.suptitle(title, fontweight='normal', fontsize=15 * suptitlesize)
+    # -----------------------------------------------------
+    #  final
+
+    h.set_figtitle(fig, title, suptitlecolor, suptitlesize)
+
     fig.tight_layout()
-    plt.show()
+    # plt.show()
 
-    result["fig"] = fig
+    result['plot']["fig"] = fig
 
-    return None if not res else result   # `.BarContainer`
+    return None if not res else result
 
-#%%
-#%%
+
+# %%
+plot_num = plot_numeric
+plot_cat = plot_factor
+
+
+# %%
 def plot_variable(
         variable, data=None, varname=None,
-        as_factor = None,  #!!!
-        factor_threshold = 13,
+        as_factor=None,  # !!!
+        factor_threshold=13,
+        # datetime=False,
         # Size parameters for numerics
         num_figsize=None, num_figwidth=None, num_figheight=None,    # for the whole figure
         num_width=None, num_height=None, num_size=4, num_width_adjust=1.2,
@@ -750,8 +804,8 @@ def plot_variable(
         fac_figsize=None, fac_figwidth=None, fac_figheight=None,    # for the whole figure
         fac_width=None, fac_height=None, fac_size=5, fac_width_adjust=1.2, fac_barwidth=.5,
         # common (works if respective param for num/fac is None)
-        figsize=None, figwidth=None, figheight=None, # for the whole figure
-        width=None, height=None, size=None, width_adjust=None, barwidth=None, # for the single plot
+        figsize=None, figwidth=None, figheight=None,  # for the whole figure
+        width=None, height=None, size=None, width_adjust=None, barwidth=None,  # for the single plot
         # title=None,
         # #
         # # factor params
@@ -777,7 +831,7 @@ def plot_variable(
         if numeric variable has less then `factor_threshold` then it will be
         treated as factor;
     """
-    ##-----------------------------------------------------
+    # -----------------------------------------------------
 
     if isinstance(variable, str):
         varname = variable
@@ -786,39 +840,39 @@ def plot_variable(
         if varname is None:
             varname = variable.name
 
-    ##-----------------------------------------------------
+    # -----------------------------------------------------
 
     if as_factor is None:
-        as_factor = variable.dtype in ["category", "object", "str"]
+        as_factor = variable.dtype in ["category", "object", "str"] + ["datetime64[ns]", "datetime64"]
         if not as_factor:
             as_factor = variable.unique().shape[0] < factor_threshold
 
-    ##-----------------------------------------------------
+    # -----------------------------------------------------
 
     if as_factor:
-        result = plot_factor( variable, varname=varname,
-            figsize = coalesce(figsize, fac_figsize),
-            figwidth = coalesce(figwidth, fac_figwidth),
-            figheight = coalesce(figheight, fac_figheight),    # for the whole figure
-            width = coalesce(width, fac_width),
-            height = coalesce(height, fac_height),
-            size = coalesce(size, fac_size),
-            width_adjust = coalesce(size, fac_width_adjust),
-            barwidth = coalesce(barwidth, fac_barwidth),
+        result = plot_factor(
+            variable, data=data, varname=varname,
+            figsize=coalesce(figsize, fac_figsize),
+            figwidth=coalesce(figwidth, fac_figwidth),
+            figheight=coalesce(figheight, fac_figheight),    # for the whole figure
+            width=coalesce(width, fac_width),
+            height=coalesce(height, fac_height),
+            size=coalesce(size, fac_size),
+            width_adjust=coalesce(size, fac_width_adjust),
+            barwidth=coalesce(barwidth, fac_barwidth),
             *args, **kwargs)
     else:
-        result = plot_numeric( variable, varname=varname,
-            figsize = coalesce(figsize, num_figsize),
-            figwidth = coalesce(figwidth, num_figwidth),
-            figheight = coalesce(figheight, num_figheight),    # for the whole figure
-            width = coalesce(width, num_width),
-            height = coalesce(height, num_height),
-            size = coalesce(size, num_size),
-            width_adjust = coalesce(width_adjust, num_width_adjust),
+        result = plot_numeric(
+            variable, data=data, varname=varname,
+            figsize=coalesce(figsize, num_figsize),
+            figwidth=coalesce(figwidth, num_figwidth),
+            figheight=coalesce(figheight, num_figheight),    # for the whole figure
+            width=coalesce(width, num_width),
+            height=coalesce(height, num_height),
+            size=coalesce(size, num_size),
+            width_adjust=coalesce(width_adjust, num_width_adjust),
             *args, **kwargs)
 
     return result
 
-#%%
-
-#%%
+# %%

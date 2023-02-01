@@ -1,4 +1,4 @@
-#! python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ---
@@ -6,9 +6,8 @@
 # !!! YAML message always begin with ---
 
 title: Transformations
-project: Empirica
 version: 1.0
-type: module             # module, analysis, model, tutorial, help, example, ...
+type: module
 keywords: [transformation, function, mapping]
 description: |
     Variables transformation helper functions
@@ -27,16 +26,14 @@ file:
               - arkadiusz.kasprzyk@quantup.pl
 """
 
-#%%
-import os, sys, json
-
-import math as m
+# %%
 import numpy as np
 import pandas as pd
 
 from functools import partial, wraps, update_wrapper
 
-#%%
+
+# %%
 def recur(fun):
 
     @wraps(fun)
@@ -52,53 +49,66 @@ def recur(fun):
 def split_pos_neg_0(fun):
 
     @wraps(fun)
-    def split_version(ss, *args, **kwargs ):
+    def split_version(ss, *args, **kwargs):
         ss = pd.Series(ss)
-        ss0 = ss[ss==0]
-        ss_neg = ss[ss<0]
-        ss_pos = ss[ss>0]
-        ss = pd.concat([ss0, -fun(-ss_neg, *args, **kwargs), fun(ss_pos, *args, **kwargs)], axis=0)[ss.index]
+        ss_neg = ss[ss < 0]
+        ss_0 = ss[ss == 0]
+        ss_pos = ss[ss > 0]
+        ss = pd.concat([-fun(-ss_neg, *args, **kwargs), ss_0, fun(ss_pos, *args, **kwargs)], axis=0)[ss.index]
         return ss
 
     return split_version
 
 
-#%%
+# %%
 def log1(ss, c=1):
     return np.log(ss + c)
 
-#%%
+
+# %%
 def test0(ss, c):
-    return 2*ss + c
+    return 2 * ss + c
+
 
 """
 rectest = recur(test0)
 rectest(np.arange(3), 1, c=1)
 rectest(np.arange(3), 1, 1)
 rectest(np.arange(3), 1, 2)
+rectest(np.arange(3), 2, 1)         #!!!
 """
 
-#%%
+
+# %%
 @recur
-def dectest(ss, c=1):
-    return 2*ss + c
+def rectest(ss, c=1):
+    return 2 * ss + c
+
 
 """
 rectest(np.arange(3), 1, c=1)
 rectest(np.arange(3), 1, 1)
 rectest(np.arange(3), 1, 2)
-rectest(np.arange(3), 2, 2)
+rectest(np.arange(3), 2, 1)
 """
-#%%
+
+
+# %%
 @recur
 def rlog1(ss):
     return np.log(ss + 1)
+
+
 rlog1.__name__ = "rlog1"
+
 
 @recur
 def rexp1(ss):
     return np.exp(ss) - 1
+
+
 rexp1.__name__ = "rexp1"
+
 
 """
 rlog1(np.arange(3))
@@ -110,18 +120,25 @@ rlog1(np.arange(3), 2)
 rexp1(rlog1(np.arange(3), 2), 2)
 """
 
-#%%
+
+# %%
 @split_pos_neg_0
 @recur
 def srlog1(ss):
     return np.log(ss + 1)
+
+
 srlog1.__name__ = "srlog1"
+
 
 @split_pos_neg_0
 @recur
 def srexp1(ss):
     return np.exp(ss) - 1
+
+
 srexp1.__name__ = "srexp1"
+
 
 """
 ss = pd.Series(np.arange(-3, 3))
@@ -139,8 +156,8 @@ trans2 = partial(srlog1, r=2)
 trans2(ss)
 
 """
-#%%
 
+# %%
 tlog1 = partial(srlog1, r=1)
 update_wrapper(tlog1, srlog1)
 tlog1.__name__ = "tlog1"
@@ -157,4 +174,4 @@ texp2 = partial(srexp1, r=2)
 update_wrapper(texp2, srexp1)
 texp2.__name__ = "texp2"
 
-#%%
+# %%

@@ -1,5 +1,5 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#! python3
 """
 ---
 # This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
@@ -27,7 +27,7 @@ file:
               - arek@staart.pl
 """
 
-#%%
+# %%
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -36,16 +36,13 @@ import pandas as pd
 
 import datetime as dt
 
-#import matplotlib as mpl
-import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
-
 from sklearn.base import TransformerMixin
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from sklearn.metrics import ConfusionMatrixDisplay, RocCurveDisplay
 
-#%%
+
+# %%
 def classifier_quality(model, X_test=None, Y_test=None):
     """
     Meant for regression classification.
@@ -53,9 +50,8 @@ def classifier_quality(model, X_test=None, Y_test=None):
     """
     if isinstance(model, GridSearchCV):
         result = pd.DataFrame(
-            {k: model.cv_results_[k] for k in \
-                 ['params', 'mean_test_score', 'std_test_score', 'rank_test_score']}
-            )
+            {k: model.cv_results_[k] for k in
+                 ['params', 'mean_test_score', 'std_test_score', 'rank_test_score']})
         print(result)
         print()
         print(f"best params: {model.best_params_}")
@@ -64,7 +60,8 @@ def classifier_quality(model, X_test=None, Y_test=None):
 
     #    Y_hat = model.predict(X_test)
 
-#%%
+
+# %%
 def binary_classifier_quality(model, X_test, Y_test):
     """
     Meant for binary classification.
@@ -72,9 +69,8 @@ def binary_classifier_quality(model, X_test, Y_test):
     """
     if isinstance(model, GridSearchCV):
         result = pd.DataFrame(
-            {k: model.cv_results_[k] for k in \
-                 ['params', 'mean_test_score', 'std_test_score', 'rank_test_score']}
-            )
+            {k: model.cv_results_[k] for k in
+                 ['params', 'mean_test_score', 'std_test_score', 'rank_test_score']})
         print(result)
         print()
         print(f"best params: {model.best_params_}")
@@ -84,16 +80,17 @@ def binary_classifier_quality(model, X_test, Y_test):
     Y_hat = model.predict(X_test)
     print("Confusion matrix (true x pred):")
     print(confusion_matrix(Y_test, Y_hat))
-    print("Sensitivity: {:f}".format( sum(Y_hat[Y_test==1]) / sum(Y_test) ))
-    print("Specificity: {:f}".format( sum(1 - Y_hat[Y_test==0]) / sum(Y_test==0)))
-    print("Accuracy score on test data: {:f}".format( accuracy_score(Y_test, Y_hat) ))
-    print("F1 score on test data: {:f}".format( f1_score(Y_test, Y_hat) ))
+    print("Sensitivity: {:f}".format(sum(Y_hat[Y_test == 1]) / sum(Y_test)))
+    print("Specificity: {:f}".format(sum(1 - Y_hat[Y_test == 0]) / sum(Y_test == 0)))
+    print("Accuracy score on test data: {:f}".format(accuracy_score(Y_test, Y_hat)))
+    print("F1 score on test data: {:f}".format(f1_score(Y_test, Y_hat)))
 
-    #print(confusion_matrix(grid.predict(X_test), y_test))
+    # print(confusion_matrix(grid.predict(X_test), y_test))
     ConfusionMatrixDisplay.from_predictions(Y_test, Y_hat)
-    RocCurveDisplay.from_estimator(model, X_test, Y_test)
+    RocCurveDisplay.from_estimator(model.best_estimator_, X_test, Y_test)
 
-#%%
+
+# %%
 class ManualFeatureSelector(TransformerMixin):
     """
     source: https://stackoverflow.com/questions/28296670/remove-a-specific-feature-in-scikit-learn
@@ -112,7 +109,8 @@ class ManualFeatureSelector(TransformerMixin):
     def fit_transform(self, X, y=None):
         return self.transform(X)
 
-#%%
+
+# %%
 class ElapsedMonths(TransformerMixin):
     """
     Transforms dates into months elapsed
@@ -153,12 +151,13 @@ class ElapsedMonths(TransformerMixin):
     def fit_transform(self, X, y=None):
         return self.transform(X)
 
-#%%
+
+# %%
 class NullsThreshold(TransformerMixin):
     """
     """
 
-    def __init__(self, threshold = .2):
+    def __init__(self, threshold=.2):
         """
         threshold : float in [0, 1]
         """
@@ -185,7 +184,8 @@ class NullsThreshold(TransformerMixin):
         _ = self.fit(X, y)
         return self.transform(X)
 
-#%%
+
+# %%
 class MinUniqueValues(TransformerMixin):
     """
     Leaves only features (variables) for which there are at least
@@ -222,7 +222,7 @@ class MinUniqueValues(TransformerMixin):
     def fit(self, X, y=None):
 
         if X.shape[0] < self.threshold:
-            warnings.warn(f'`threshold` is set to {self.threshold} what is more  then `len(data)`.\n' +
+            warnings.warn(f'`threshold` is set to {self.threshold} what is more  then `len(data)`.\n'
                           'Filtering formula cannot be applied - all columns passed.')
             self.features = X.columns
         else:
@@ -237,7 +237,8 @@ class MinUniqueValues(TransformerMixin):
         _ = self.fit(X, y)
         return self.transform(X)
 
-#%%
+
+# %%
 class MostCommonThreshold(TransformerMixin):
     """
     Leaves only features (variables) for which the most common value
@@ -288,8 +289,8 @@ class MostCommonThreshold(TransformerMixin):
     def fit(self, X: pd.DataFrame, y=None):
         self.N = X.shape[0]
 
-        if 1/self.N >= self.threshold:
-            warnings.warn(f'`threshold` is set to {self.threshold} what is less then `1 / len(data)`.\n' +
+        if 1 / self.N >= self.threshold:
+            warnings.warn(f'`threshold` is set to {self.threshold} what is less then `1 / len(data)`.\n'
                           'Filtering formula cannot be applied - all columns passed.')
             self.features = X.columns
         else:
@@ -305,4 +306,4 @@ class MostCommonThreshold(TransformerMixin):
         return self.transform(X)
 
 
-#%%
+# %%

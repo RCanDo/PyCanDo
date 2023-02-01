@@ -1,0 +1,24 @@
+model_base_name : model_rtb_final
+empty:
+overwrite: True
+data_dir : "data/iter3/"
+data_file :
+    - "qu_test_legacy_20220817-19_202208290740.csv"
+    - "qu_test_legacy_20220820-22_202208290745.csv"
+    - "qu_test_legacy_20220823-26_202208290800.csv"
+model_type : "rtb"
+data_temp_dir : "temp/model_rtb_final/"
+model_dir : "models/all_models"
+data_temp : "temp"
+hyperparams_dir : "temp/model_rtb_final"
+best_features_dir : "temp/model_rtb_final"
+calibration : True
+ecom_target_mode: "0:"  #'~(:-1)'
+filter :
+    columns:
+        a: col1
+        b: col2
+        c: col2
+    condlist:
+        - a.isin([4, 6, 8])
+        - a | b

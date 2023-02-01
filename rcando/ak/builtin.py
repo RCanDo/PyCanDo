@@ -9,13 +9,21 @@ title: Convieniences And Utilities
 subtitle: Based only on built-ins.
 version: 1.0
 type: code
-keywords: [flatten]   # there are always some keywords!
+keywords: [flatten, coalesce, lengthen, dict of sets]   # there are always some keywords!
 description: |
     Convieniens functions an utilities used in everyday work.
 content:
+    - coalesce(*args)
+    - timeit(fun)
     - flatten(lst:list) -> list  -- deep flatten a list
+    - lengthen(iter) -> iter
+    - union(*sets)
+    - dict_set_union(dict[any, set])
+    - paste()
+
 remarks:
-    - In this file we do not use any additional package - only built-ins!
+    - In this file we try hard to not use any additional package - only built-ins!
+      With few exceptions like itertools or functools (which)
 todo:
 sources:
 file:
@@ -39,10 +47,16 @@ pwd
 cd D:/ROBOCZY/Python/RCanDo/...
 ls
 """
-
-from typing import List, Tuple, Dict, Set, Optional, Union, NewType, Iterator
+import sys
+from typing import Dict, Set, Any, Iterable #, List, Tuple, Optional, Union, NewType
 
 #%%
+#%%
+def coalesce(*args):
+    ll = list(filter(lambda x: not x is None, args))
+    ll.append(None)     # in case everything is None
+    return ll[0]
+
 #%%
 import time
 
@@ -59,12 +73,14 @@ def timeit(fun):
 
 #%%
 def lengthen0(x, n, as_list=True):
-    '''Lengthening ll to the len(ll) == n;
-    if ll is not iterable then it is turned into 1 element list (if `as_list` is True)
+    '''Lengthening ll to the len(ll) == n
+    by repeating the last item.
+    If ll is not iterable then it is turned into 1 element list (if `as_list` is True)
     or tuple (in other case) and then 'multiplied' n times.
-    if len(ll) > n then ll is in fact shortened to have length == n.
+    If len(ll) > n then ll is in fact shortened to have length == n.
     `as_list` is irrelevant in case of x is iterable.
 
+    lengthen([1, 3, 2, 5], 9, True)
     '''
 
     if isinstance(x, (list, tuple)):
@@ -89,8 +105,9 @@ def lengthen0(x, n, as_list=True):
     return x
 
 #%%
-from itertools import *
-def lengthen(iterable: Iterator, n: int, as_list: bool=True) -> Iterator:
+from itertools import islice, chain, repeat
+
+def lengthen(iterable: Iterable, n: int, as_list: bool=True) -> Iterable:
 
     iterable = islice(chain(iterable, repeat(iterable[-1], max(0, n - len(iterable)))), n)
 
@@ -101,7 +118,7 @@ def lengthen(iterable: Iterator, n: int, as_list: bool=True) -> Iterator:
 
     return result
 
-# lengthen0([1, 3, 2, 5], 9, True)
+# lengthen([1, 3, 2, 5], 9, True)
 
 #%%
 def flatten(lst: list) -> list:
@@ -124,6 +141,7 @@ def flatten(lst: list) -> list:
 def paste(left, right,
           by_left: bool = True, sep: str = "", flat: bool = True):
     """
+    Works similar to R's paste().
     by_left: bool
     Examples:
     paste(['a', 'b'], [1, 2]) == ['a1', 'a2', 'b1', 'b2']
@@ -161,4 +179,72 @@ def paste(left, right,
     return result
 
 
+#%%
+from functools import reduce
+
+def union(*args):
+    return reduce(lambda a, b: a.union(b), args, set())
+
+def dict_set_union(dic1: Dict[Any, Set], dic2: Dict[Any, Set]) -> Dict[Any, Set]:
+    """
+    dict1, dict2: dictionaries of sets !!!
+    Returns dictionary with all the keys from both dicts
+    and union of sets for each key.
+
+    Examples:
+    dic1 = {"a":{1, 2}, "b":{0, "0"}, "c":set()}
+    dic2 = {"a":{3, 5, 7}, "c":{0, 2}, "d":{"qq"}}
+
+    dict_set_union(dic1, dic2)
+
+    union(*dic2.values())
+    union(*dic2.values(), *dic1.values())
+    """
+    keys = set(dic1.keys()).union(dic2.keys())
+
+    dic_new = dict()
+    for k in keys:
+        dic_new[k] = dic1.get(k, set()).union(dic2.get(k, set()))
+
+    return dic_new
+
+#%%
+def filter_str(string, iterable):
+    res = list(filter(lambda s: s.find(string) > -1, iterable))
+    return res
+
+import re
+def filter_re(regexp, iterable):
+    reg = re.compile(regexp)
+    res = list(filter(lambda s: reg.search(s), iterable))
+    return res
+
+def iprint(iterable, sep="\n", pref="", suff="", strip=True):
+    if strip:
+        if isinstance(strip, str):
+            iterable = [s.strip(strip) for s in iterable]
+        else:
+            iterable = [s.strip() for s in iterable]
+    if pref or suff:
+        iterable = [f"{pref}{s}{suff}" for s in iterable]
+    print(sep.join(iterable))
+
+
+
+""" Examples
+ll = ["gura", "qqra", "burak", "qrak", "chmura"]
+filter_str("qra", ll)
+
+filter_re("qra", ll)
+filter_re("^qra", ll)
+filter_re("urak*$", ll)
+
+iprint(ll)
+iprint(ll, sep=" & ")
+iprint(ll, pref="i.")
+iprint(ll, suff=" ?")
+iprint(ll, pref="i.", suff="!!!")
+iprint(ll, " | ", pref="i.", suff=".~")
+
+"""
 #%%
