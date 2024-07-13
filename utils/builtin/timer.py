@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # %%
 import time
-from datetime import datetime
+# from datetime import datetime
 
 
 # %%
@@ -15,6 +15,18 @@ class TimeLapse:
         unit: str = 's'
             units in which `t` is given;
             currently only possible values are: 's' for seconds and 'n' for nanoseconds (1e-9 s);
+
+        Example
+        -------
+        tl = TimeLapse(10000)
+        tl
+        print(tl)
+        tl = TimeLapse(100000)
+        tl
+        print(tl)
+        tl = TimeLapse(1012345678901234, 'n')
+        tl
+        print(tl)
         """
         self.unit = unit
         self.time = t
@@ -64,6 +76,8 @@ class SimpleTimer():
     print(t0)
     t0.time_stop
     t0.isotime_stop
+    t0.time_diff
+    print(t0.time_diff)
     """
     def __init__(self):
         self.time_start = time.time()       # float [s], precision 1e-9 [n]
@@ -135,10 +149,9 @@ class DTimes():
         self.perf_counter = TimeLapse(dpc)
 
     def __str__(self):
-        ss = " elapsed" + \
-             "\n  clock time:          " + self.clock_time.__str__() + \
-             "\n  process time:        " + self.process_time.__str__() + \
-             "\n  performance counter: " + self.perf_counter.__str__()
+        ss = "  clock time:          " + self.clock_time.__str__() + "\n" + \
+             "  process time:        " + self.process_time.__str__() + "\n" + \
+             "  performance counter: " + self.perf_counter.__str__()
         return ss
 
     def __add__(self, other):
@@ -159,16 +172,30 @@ class DTimes():
 
 class Timer():
     """
-    registers time on init:
-    > timer = Timer()
-    registers time on stop:
-    > timer.stop()
-    and calculates time delta:
-    > timer.diff     # displays time delta for all three 'time types'
-    > timer.elapsed  # alias for  timer.diff
-    > timer          # displays timer.start, timer.stop, timer.diff
-    consecutive stops possible
-    -- time.start does not change thus time.diff always wrt to time.start at init.
+    Example
+    -------
+    # registers time on init:
+    timer = Timer()
+    # or with title (may be helpfull when using many timers)
+    timer = Timer('Timer 1')
+    #
+    # registers time on stop:
+    timer.stop()
+    # and calculates time delta:
+    timer.diff     # displays time delta for all three 'time types'
+    timer.elapsed  # alias for  timer.diff
+    timer          # displays timer.start, timer.stop, timer.diff
+    # consecutive stops possible
+    # however, time.start does not change thus time.diff always wrt to time.start at init.
+    print(timer)
+    timer.print()
+    timer.print('start')
+    timer.print('stop')
+    timer.print('elapsed')
+    timer.print('elapsed', 1, 1)    # default: title and entry name
+    timer.print('elapsed', 1, 0)    # title but no entry name
+    timer.print('elapsed', 0, 1)    # no title but entry name
+    timer.print('elapsed', 0, 0)    # no title no entry name
     """
     def __init__(self, title: str = None):
         self.title = title
@@ -189,23 +216,25 @@ class Timer():
         ss = (self.title + "\n") if self.title is not None else ""
         ss += " start\n" + self.time_start.__str__() + \
               " stop\n" + self.time_stop.__str__() + \
-              self.diff.__str__()
+              " elapsed\n" + self.diff.__str__()
         return ss
 
     def __repr__(self):
         return self.__str__()
 
-    def print(self, what: str = ""):
+    def print(self, what: str = "", title: bool = True, name: bool = True):
         if what == "":
             print(self.__str__())
         else:
-            print(self.title)
+            if title and self.title is not None:
+                print(self.title)
+            ss = f" {what}\n" if name else ""
             if what in ("diff", "elapsed"):
-                ss = self.diff.__str__()
+                ss += self.diff.__str__()
             elif what == "start":
-                ss = self.time_start.__str__()
+                ss += self.time_start.__str__()
             elif what == "stop":
-                ss = self.time_stop.__str__()
+                ss += self.time_stop.__str__()
             else:
                 raise Exception("`what` must be one of 'diff', 'elapsed', 'start', 'stop'.")
             print(ss)

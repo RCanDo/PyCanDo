@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: json (of any depth) or series of jsons into data frame
 version: 1.0
 type: module             # module, analysis, model, tutorial, help, example, ...

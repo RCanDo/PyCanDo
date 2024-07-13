@@ -70,7 +70,7 @@ class BinaryConfusion(pd.DataFrame):
     Uses  sklearn.metrics.confusion_matrix  which has the following order of elements:
      predicted     0    1
      real      0   TN   FP
-               1   FN   TN
+               1   FN   TP
     """
 
     def __init__(
@@ -78,7 +78,7 @@ class BinaryConfusion(pd.DataFrame):
         as_int: bool = True,
         names: tuple[str] = ('0', '1'),
         model_name: str = "binary_model",
-        *args, **kwargs
+        *args, **kwargs     # passed to DataFrame init
     ):
 
         if len(yy) != len(yy_hat):
@@ -97,9 +97,9 @@ class BinaryConfusion(pd.DataFrame):
         self.index = list(names)
         self.columns = list(names)
         self.rename_axis(index="real", columns="prediction", inplace=True)
-        self.model_name = "binary_model"
+        self.model_name = model_name
         #
-        self.n_obs = self.sum().sum()
+        self.nobs = self.sum().sum()
 
         self.TN, self.FP, self.FN, self.TP = self.ravel("tuple")
 
@@ -122,7 +122,9 @@ class BinaryConfusion(pd.DataFrame):
         stats: tuple[str] = None,
         name: str = None,
     ) -> Union[dict, pd.Series]:
-        """"""
+        """
+        Returns all the derivateves in one pd.Series indexed with their names.
+        """
         derivs = {
             "accuracy": self.accuracy,
             "f1": self.f1,
@@ -132,10 +134,10 @@ class BinaryConfusion(pd.DataFrame):
             "roc_ratio": self.roc_ratio,        # TPR / FPR
             "precision": self.precision,
             "fdr": self.false_discovery_rate,   # false discovery rate
-            "nobs": self.n_obs
+            "nobs": self.nobs,
         }
         stats = derivs.keys() if stats is None else stats
-        derivs = {k: derivs[k] for k in stats}
+        derivs = {k: derivs[k] for k in stats if k in derivs.keys()}
         if as_series:
             derivs = pd.Series(derivs, name=(name or self.model_name))
         return derivs
@@ -173,7 +175,7 @@ class BinaryConfusion(pd.DataFrame):
 
     @property
     def accuracy(self):
-        return (self.TP + self.TN) / self.n_obs
+        return (self.TP + self.TN) / self.nobs
 
     @property
     def false_discovery_rate(self):

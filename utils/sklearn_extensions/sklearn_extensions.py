@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: sklearn extensions
 version: 1.0
 type: module
@@ -24,7 +21,7 @@ file:
     authors:
         - fullname: Arkadiusz Kasprzyk
           email:
-              - arek@staart.pl
+              - arkadiusz.kasprzyk@quantup.pl
 """
 
 # %%
@@ -108,6 +105,11 @@ class ManualFeatureSelector(TransformerMixin):
 
     def fit_transform(self, X, y=None):
         return self.transform(X)
+
+
+# %%
+# class ManualFeatureExcluder(TransformerMixin):
+#  moved to common/models
 
 
 # %%
@@ -195,7 +197,7 @@ class MinUniqueValues(TransformerMixin):
     def __init__(self, threshold=2, dtypes=None):
         """
         threshold : int
-        dtype : List[str]
+        dtypes : List[str]
             list of dtypes for which the min unique value threshold will be applied;
             E.g. one may wish to retain only those numeric features which have at least `threshold=99` values:
             > MinUniqueValues(99, dtypes=['float64', 'float32', 'int64', 'int32'])
@@ -248,7 +250,7 @@ class MostCommonThreshold(TransformerMixin):
     def __init__(self, threshold=.9, dtypes=None):
         """
         threshold : float in [0, 1]
-        dtype : List[str]
+        dtypes : List[str]
             list of dtypes for which the most common value threshold will be applied;
             E.g. one may wish to retain only those numeric features
             for which the most common value is no more then 10% of all observations:
@@ -256,7 +258,7 @@ class MostCommonThreshold(TransformerMixin):
 
         Remarks
         It's expensive!
-        NaNs are not counted as values.
+        NaNs are not counted as values.             # !!!???
         """
         if not 0. <= threshold <= 1.:
             raise Exception('`threshold` must be float between 0 and 1.')

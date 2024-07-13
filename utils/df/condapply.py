@@ -2,12 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Applying conditions on data frame
 version: 1.0
-type: modeule
+type: module
 keywords: [filtering, selectinon, creating new columns, ...]
 description: |
     Application of conditions on the variables from data frame:
@@ -30,13 +27,14 @@ file:
 import pandas as pd
 import utils.builtin as bi
 import utils.data_utils as du
+import numpy as np
 
 
 # %%
 @bi.timeit
-def condapply(df: pd.DataFrame, conditem: dict, levels_delim: str = "/", **globs) -> pd.DataFrame:
+def condapply(df: pd.DataFrame, conditem: dict, levels_delim: str | None = "/", **globs) -> pd.DataFrame:
     """
-    levels_delim : str = "/"
+    levels_delim : str | None = "/"
         in case of multiindex;
         in names of variables "a/b" means ('a', 'b') column;
         if None then there is no search for splitting colnames (i.e. no multiindex assumed);
@@ -114,6 +112,8 @@ def condapply(df: pd.DataFrame, conditem: dict, levels_delim: str = "/", **globs
             name = tuple(name)
         else:
             name = tuple(name.split(levels_delim)) if levels_delim else name
+        if len(name) == 1:
+            name = name[0]
         return name
 
     if globs:
@@ -140,13 +140,14 @@ def condapply(df: pd.DataFrame, conditem: dict, levels_delim: str = "/", **globs
             for filtr in filters:
                 print(" " * 3, filtr)
                 idx = eval(filtr)
+                # print(idx)
                 if isinstance(idx, slice):
                     df = df.iloc[idx, :]
-                elif isinstance(idx[0], (pd.np.bool_, bool,)):
+                elif isinstance(idx.iloc[0], (np.bool_, bool,)):
                     df = df[idx]
                 print(" " * 6, df.shape)
 
-        elif key.split(".")[0] == 'create':
+        elif key.split(".")[0] in ('create', 'replace', 'update'):
             news = group
             for var, cond in news.items():
                 var = proper_name(var)

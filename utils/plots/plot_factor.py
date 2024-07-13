@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Diagnostic plots for one variable
 version: 1.0
 type: module
@@ -36,9 +33,11 @@ import pandas as pd
 # import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from utils.builtin import coalesce
+from utils.builtin import coalesce, adaptive_round
 import utils.df as cdf
 import utils.plots.helpers as h
+
+# plt.switch_backend('Agg')  # useful for pycharm debugging
 
 
 # %%
@@ -57,6 +56,7 @@ def plot_factor(
         labelrotation=75.,
         #
         print_info=True, res=False,
+        precision=3,
         *args, **kwargs):
     """
     Remarks
@@ -71,6 +71,8 @@ def plot_factor(
         hence using None is dangerous if not sure how many levels there are;
         it's better to set big integer but no bigger then 100;
         otherwise plot may not be rendered at all if there are thousands of levels;
+    - precision : int = 3
+        precision of floats as variable levels; more or less significant digits (however only for fractions);
 
     Graphical parameters
     --------------------
@@ -117,7 +119,6 @@ def plot_factor(
 
     """
     # -----------------------------------------------------
-
     if isinstance(variable, str):
         varname = variable
         variable = data[variable]
@@ -158,7 +159,13 @@ def plot_factor(
 
     # -----------------------------------------------------
     #  necessary for numerics turned to factors:
-    levels = variable_vc.index.to_series().astype('str').values
+    levels = variable_vc.index.to_series().values
+    if not isinstance(levels[0], str):
+        try:
+            levels = [adaptive_round(l, precision) for l in levels]
+        except Exception:   # we really don't care!
+            pass
+    levels = [str(l) for l in levels]   # also for strings to turn None into 'None'
     counts = variable_vc.values.tolist()
 
     var_variation = cdf.info(
@@ -186,7 +193,8 @@ def plot_factor(
         "variable": variable,
         "info": var_info,
         "variation": var_variation,
-        "distribution": variable_vc}  # variable after all prunings and transformations
+        "distribution": variable_vc  # variable after all prunings and transformations
+    }
 
     # ---------------------------------------------------------------------------------------------
     #  plotting
@@ -214,16 +222,16 @@ def plot_factor(
                 width = size * width_adjust if width is None else width
             figwidth = width
 
-    if horizontal is None:
-        horizontal = len(levels) < 10
+        if horizontal is None:
+            horizontal = len(levels) < 10
 
-    if horizontal:
-        figsize = figheight, figwidth + .8 * n / (n + 2)
-        #
-        levels = levels[::-1]
-        counts = counts[::-1]
-    else:
-        figsize = figwidth, figheight
+        if horizontal:
+            figsize = figheight, figwidth + .8 * n / (n + 2)
+            #
+            levels = levels[::-1]
+            counts = counts[::-1]
+        else:
+            figsize = figwidth, figheight
 
     fig, ax = plt.subplots(figsize=figsize)
 

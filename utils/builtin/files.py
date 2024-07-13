@@ -4,19 +4,11 @@
 ---
 title: files utilities
 version: 1.0
-type: module             # module, analysis, model, tutorial, help, example, ...
 keywords: [file, read, open, context, ...]
 description: |
 sources:
 remarks:
 todo:
-file:
-    date: 2023-01-19
-    authors:
-        - nick: arek
-          fullname: Arkadiusz Kasprzyk
-          email:
-              - arkadiusz.kasprzyk@quantup.pl
 """
 
 

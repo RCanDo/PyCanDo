@@ -2,19 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Setup for models
 version: 1.0
-type: script/module
 keywords: [setup, libraries, settings, ...]
 description: |
     Things common to all model files
 file:
-    name: setup.py
-    path: .   # working directory
-    date: 2022-02-16
     authors:
         - nick: arek
           fullname: Arkadiusz Kasprzyk
@@ -24,9 +17,9 @@ file:
 
 # %%
 # import os
-import sys
-sys.path.insert(1, "../")
-sys.path.insert(1, "../../")
+# import sys
+# sys.path.insert(1, "../")
+# sys.path.insert(1, "../../")
 
 import pandas as pd
 
@@ -41,8 +34,11 @@ plt.style.use('ggplot')
 
 
 # %%
-def pandas_options():
+def pandas_options(kwargs: dict = {}):
     """
+    kwargs: dict = {}
+        each `key: value` pair is passed to `pd.set_option(key, value)`.
+
     https://stackoverflow.com/questions/11707586/how-do-i-expand-the-output-display-to-see-more-columns-of-a-pandas-dataframe
     """
     # pd.options.display.width = 0  # autodetects the size of your terminal window - does it work???
@@ -60,8 +56,8 @@ def pandas_options():
     # # the same
     # pd.options.display.width = 120
 
-    pd.set_option("display.precision", 5)
-    # pd.option_context('display.float_format', '{:0.20f}'.format)
+    for k, v in kwargs.items():
+        pd.set_option(k, v)
 
 # pandas_options()
 

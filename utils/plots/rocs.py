@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Receiver Operating Characteristic (ROC)
 version: 1.0
 type: sub-module

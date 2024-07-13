@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Diagnostic plots for one numeric variable
 version: 1.0
 type: module
@@ -18,7 +15,7 @@ description: |
         - sum vs counts (wrt to groups from histogram)
         - boxplot
     Any configuration of the above types of plots are possible via `what` parameter.
-    Mximum flexibility (lots of parameters) but with sensible defaults.
+    Maximum flexibility (lots of parameters) but with sensible defaults.
     This allows to do well with difficult cases like numeric variables with
     small nr of different values (better to plot it as categorical)
     or categorical variables with large number of different values
@@ -47,6 +44,8 @@ import matplotlib.pyplot as plt
 
 import utils.df as udf
 import utils.plots.helpers as h
+
+# plt.switch_backend('Agg')  # useful for pycharm debugging
 
 
 # %%
@@ -245,7 +244,8 @@ def plot_numeric(
     variable, transname = h.clip_transform(
         variable,
         lower, upper, exclude,
-        transform, lower_t, upper_t, exclude_t, "T")
+        transform, lower_t, upper_t, exclude_t, "T"
+    )
 
     # -----------------------------------------------------
     #  statistics for processed variable
@@ -288,7 +288,8 @@ def plot_numeric(
         "info": var_info,
         "variation": var_variation,     # variable after all prunings and transformations
         "distribution": var_distribution,
-        "plot": dict()}
+        "plot": dict()
+    }
 
     # ---------------------------------------------------------------------------------------------
     #  plotting
@@ -301,7 +302,7 @@ def plot_numeric(
 
     N = len(variable) if not n_obs else min(len(variable), int(n_obs))
 
-    # !!! get  color, s, alhpa  from data if they are proper column names !!!
+    # !!! get  color, s, alpha  from data if they are proper column names !!!
 
     if isinstance(alpha, str):
         alpha = data[alpha]

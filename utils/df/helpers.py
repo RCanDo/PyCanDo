@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Helper functions for pd.DataFrame
 version: 1.0
 type: module
@@ -36,7 +33,7 @@ import pandas as pd
 # %%
 def to_datetime(ss: pd.Series, unit: str = 's', floor: str = 's') -> pd.Series:
     """"""
-    ss = pd.to_datetime(ss.astype(int), unit=unit)
+    ss = pd.to_datetime(ss.astype(int, errors='ignore'), unit=unit)
     ss = ss.dt.floor(floor)
     return ss
 
@@ -61,9 +58,10 @@ def memory(
 
 # %%
 def count_factors_levels(
-        df: pd.DataFrame,
-        flatten: str = " : ",
-        row_name: int = 0, ) -> pd.DataFrame:
+    df: pd.DataFrame,
+    flatten: str = " : ",
+    row_name: int = 0,
+) -> pd.DataFrame:
     """
     Returns data frame of counts of each level of each factor of `df` .
 
@@ -77,7 +75,7 @@ def count_factors_levels(
     If `flatten` is not None
     then column names will be flattened to 1 level according to:
         "factor_name" + "flatten" + "factor_level"
-    e.g. "variable : value" if `factor = " : "` (default).
+    e.g. "variable : value" if `flatten = " : "` (default).
     """
     vars_dict = dict()
     for v in df.columns:
@@ -101,8 +99,9 @@ def count_factors_levels(
 
 # %%  exactly the same in plots.helpers
 def sample(
-        data: Union[pd.DataFrame, pd.Series],
-        n: int, shuffle: bool, random_state: int) -> Union[pd.DataFrame, pd.Series]:
+    data: Union[pd.DataFrame, pd.Series],
+    n: int, shuffle: bool, random_state: int
+) -> Union[pd.DataFrame, pd.Series]:
     """"""
     if n and n < len(data):
         data = data.sample(int(n), ignore_index=False, random_state=random_state)
@@ -211,5 +210,75 @@ def align_sample(data, n_obs=int(1e4), shuffle=False, random_state=2,
     result = [data, *kwargs.values()]     # !!! order of input preserved !!!
 
     return result
+
+
+# %%
+def divide_df(
+        df: pd.DataFrame,
+        by: str,
+        allowed_values: list[str] = None,
+        add_all_allowed: str = "",
+        add_all: str = "",
+        only_index: bool = True,
+) -> dict[str, pd.DataFrame]:
+    """
+    Wrapper around `dict(tuple(df.groupby(by)))` with some additional control.
+    Given data frame `df` with column `by` splits `df` into parts wrt to values of `by`.
+    Returns dictionary with unique values of `by` as keys and respective `df` parts as values.
+
+    To spare space, by default only indices of respective parts are remembered: `only_index=True`.
+    Set `only_index=False` to remember whole data parts -- notice though that it's memory consuming
+    as it simply replicates data (may be killer for large `df`).
+
+    Result is limited to only `allowed_values` of `by`,
+    however, if `allowed_values` is None then all values of `by` are considered.
+
+    To the resulting dictionary one may add the whole `df` under key `add_all` (if not empty)
+    and also the whole part of `df` corresponding to only `allowed_values`
+    - under key `add_all_allowed` (if not empty).
+
+    When there is no `allowed_values` in data or `allowed_values` is empty list
+    then returns empty dict (if additionally `add_all_allowed` and `add_all` are empty).
+
+    Arguments
+    ---------
+    df: pd.DataFrame,
+    by: str,
+        column name; wrt values of this column `df` will be split;
+    allowed_values: list[str] = None,
+        list of values of `by` which are allowed, i.e. split will be made wrt to only these values
+        and other values are ignored (ommited);
+        if None all values of `by` are considered;
+        ! empty list will result with no split (thus it is opposite of None case).
+    add_all_allowed: str = "",
+        the key under which to remember part of `df` corresponding to all `allowed_values`;
+        ignored if empty;
+    add_all: str = "",
+        the key under which to remember whole `df`;
+        ignored if empty;
+    only_index: bool = False,
+        to remember only indices of respective parts of `df`;
+    """
+    divdic = {}
+
+    if only_index:
+        df = df[[by]]
+
+    if add_all:
+        divdic |= {add_all: df}
+
+    if allowed_values is not None:
+        df = df[df[by].isin(allowed_values)]    # may be empty
+
+    if add_all_allowed:
+        divdic |= {add_all_allowed: df}
+
+    if not df.empty:
+        divdic |= dict(tuple(df.groupby(by)))
+
+    if only_index:
+        divdic = {k: d.index for k, d in divdic.items()}
+
+    return divdic
 
 # %%

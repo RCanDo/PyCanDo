@@ -34,10 +34,11 @@ import numpy as np
 import pandas as pd
 
 # from scipy.stats import entropy
-from sklearn.metrics import r2_score, roc_auc_score  # , roc_curve,
-from sklearn.metrics import mean_squared_error, explained_variance_score
+from sklearn.metrics import r2_score, roc_auc_score, brier_score_loss
+from sklearn.metrics import mean_squared_error, explained_variance_score, precision_recall_curve
 # from sklearn.model_selection import cross_val_score
-from utils.stats import ConfusionMatrix
+from utils.stats import ConfusionMatrix, Lift, Gain
+from numpy.linalg import norm
 
 import utils.builtin as bi
 
@@ -54,8 +55,8 @@ class TrainTestMetric(bi.Repr):
     Notice that some metrics may be more then one number, e.g. confusion matrix.
     """
     def __init__(self):
-        self.test: Any = None
         self.train: Any = None
+        self.test: Any = None
 
     def __getitem__(self, name):
         return self.__getattribute__(name)
@@ -128,7 +129,11 @@ class Metrics(abc.ABC, bi.Repr):
             which metrics to take; if None takes all except 'confusion' (because it's matrix');
         """
         if stats is None:
-            stats = [k for k in self.__dict__.keys() if k != "confusion" and not k.startswith("_")]
+            stats = [k for k in self.__dict__.keys()
+                     if k not in ["confusion", "lift", "gain"] and not k.startswith("_")]
+        else:
+            stats = [k for k in stats
+                     if k not in ["confusion", "lift", "gain"] and not k.startswith("_")]
         ss = pd.concat(
             {k: v.to_series() for k, v in self.__dict__.items() if (k in stats and v is not None)},
             axis=0
@@ -236,13 +241,16 @@ class MetricsBin(Metrics):
 
     STATS = [
         "auc", "gini",
-        "confusion", "accuracy", "f1", "sensitivity", "specificity", "fpr", "roc_ratio", "precision", "fdr", "nobs",
+        "confusion", "accuracy", "f1", "sensitivity", "specificity", "fpr", "roc_ratio", "precision", "fdr",
+        "brier_score", "nobs",
+        "lift", "gain",
     ]
 
     def __init__(
         self,
         stats: tuple[str] = None,
         threshold: float = .5,
+        q_order: int = 10,
     ):
         """
         stats: tuple[str] = None,
@@ -250,15 +258,19 @@ class MetricsBin(Metrics):
             if None takes all listed in MetricsBin.STATS;
         threshold: float = .5,
             binarisation threshold for raw predicttions from binary model;
+        q_order: int = 10,
+            order of quantiles for some statistics, like lift or gain;
         """
 
         self._stats = stats if stats is not None else MetricsBin.STATS
         self._threshold = threshold
+        self._q_order = q_order
 
-        if "auc" in self._stats or "gini" in self._stats:
+        self.confusion = TrainTestMetric()  # regardles of stats
+
+        if "auc" in self._stats or "gini" in self._stats:  # i.e. calculate both if any one is requested
             self.auc = TrainTestMetric()
             self.gini = TrainTestMetric()
-        self.confusion = TrainTestMetric()  # regardles of stats
 
         for k in self._stats:
             self.__dict__[k] = TrainTestMetric()
@@ -267,6 +279,15 @@ class MetricsBin(Metrics):
             self.nobs0 = TrainTestMetric()
             self.nobs1 = TrainTestMetric()
 
+        if "brier_score" in self._stats:
+            self.brier_score = TrainTestMetric()
+            self.brier_score0 = TrainTestMetric()
+            self.brier_score1 = TrainTestMetric()
+
+        if "precision" in self._stats:
+            self.precision_opt = TrainTestMetric()
+            self.recall_opt = TrainTestMetric()
+
     def compute(
         self,
         y_train: pd.Series,
@@ -274,6 +295,7 @@ class MetricsBin(Metrics):
         y_test: pd.Series = None,
         y_test_hat: pd.Series = None,
         threshold: float = None,
+        q_order: int = None,
     ) -> None:
         """
         Compute all metrics (stats) for provided data;
@@ -290,16 +312,16 @@ class MetricsBin(Metrics):
         threshold: float = None,
             threshold value for determining which prediction may be considered 1 and which 0:
             y_hat > threshold -> 1.
+        q_order: int = 10,
+            order of quantiles for some statistics, like lift or gain;
         """
-        if threshold:
-            self._threshold = threshold
-        else:
-            threshold = self._threshold
+        threshold = threshold or self._threshold
+        q_order = q_order or self._q_order
 
-        self._compute_0('train', y_train, y_train_hat, threshold)
+        self._compute_0('train', y_train, y_train_hat, threshold, q_order)
 
         if y_test is not None:
-            self._compute_0('test', y_test, y_test_hat, threshold)
+            self._compute_0('test', y_test, y_test_hat, threshold, q_order)
 
     def _compute_0(
         self,
@@ -307,9 +329,10 @@ class MetricsBin(Metrics):
         y: pd.Series,
         y_hat: pd.Series,
         threshold: float = .5,
+        q_order: int = 10,
     ) -> None:
         """
-        Helper for .compute() method, depends on self.stats.
+        Core procedure for .compute() method, depends on self.stats.
         For true values of a target y and it's prediction from a model y_hat,
         computes all the metrics relative to the type of target (and model) binary or continuous.
         mode: str
@@ -324,13 +347,48 @@ class MetricsBin(Metrics):
             self.nobs0[mode] = (y == 0).sum()
             self.nobs1[mode] = (y == 1).sum()
 
-        y_hat = self.binarise(y_hat, threshold)     # only _hat needs binarisation
-        self.confusion[mode] = ConfusionMatrix(y, y_hat)
+        if "lift" in self._stats:
+            self.lift[mode] = Lift(y, y_hat, q_order)
+        if "gain" in self._stats:
+            self.gain[mode] = Gain(y, y_hat, q_order)
 
-        stats = tuple(set(self._stats).difference({'confusion', 'auc', 'gini'}))
-        values = self.confusion[mode].derivatives(stats=stats).values()
-        for k, v in zip(stats, values):
+        if "brier_score" in self._stats:
+            ones = y == 1
+            y_hat.index = y.index
+            self.brier_score[mode] = brier_score_loss(y, y_hat)
+            self.brier_score0[mode] = brier_score_loss(y[~ones], y_hat[~ones])
+            self.brier_score1[mode] = brier_score_loss(y[ones], y_hat[ones])
+
+        if "precision" in self._stats:
+            precision, recall, threshold = self.find_opt_precision_recall(y, y_hat) if mode == "train"\
+                else (None, None, self._threshold)
+            self.precision_opt[mode] = precision
+            self.recall_opt[mode] = recall
+
+        # confusion matrix and its derivatives
+        y_hat_bin = self.binarise(y_hat, threshold)     # only _hat needs binarisation
+        self.confusion[mode] = ConfusionMatrix(y, y_hat_bin)
+        # stats = tuple(set(self._stats).difference({'confusion', 'auc', 'gini', 'lift', 'gain', 'brier_score'}))  # X
+        derivs = self.confusion[mode].derivatives(stats=self._stats)
+        for k, v in derivs.items():
             self.__dict__[k][mode] = v
+
+    def find_opt_precision_recall(
+        self,
+        y: pd.Series,
+        y_hat: pd.Series,
+        epsilon: float = .05,
+    ) -> None:
+        precision, recall, threshold = precision_recall_curve(y, y_hat)
+        distances = np.array([])
+        for point in zip(-1 * precision, -1 * recall):
+            dist = np.abs(norm(np.cross((1, 1), point)) / norm((1, 1)))
+            distances = np.append(distances, dist)
+        index_min = np.argmin(distances)
+        self._threshold = float(round(threshold[index_min], 3))
+        p, r, t = float(round(precision[index_min], 3)), float(round(recall[index_min], 3)),\
+            float(round(threshold[index_min], 3))
+        return p, r, t
 
     def binarise(
         self,
@@ -363,3 +421,25 @@ class MetricsBin(Metrics):
         """
         confusion = pd.concat(self.confusion.to_dict_orig(), axis=concat)
         return confusion
+
+    def lift_df(
+        self,
+        concat: int = 1,
+        quantile_index: bool = False,
+    ) -> pd.DataFrame:
+        lift = pd.concat(
+            {t: self.lift[t].to_series(quantile_index) for t in ["test", "train"]},
+            axis=concat
+        )
+        return lift
+
+    def gain_df(
+        self,
+        concat: int = 1,
+        quantile_index: bool = False,
+    ) -> pd.DataFrame:
+        gain = pd.concat(
+            {t: self.gain[t].to_series(quantile_index) for t in ["test", "train"]},
+            axis=concat
+        )
+        return gain

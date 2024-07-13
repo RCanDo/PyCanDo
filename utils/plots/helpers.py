@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Helper plot functions
 version: 1.0
 type: sub-module
@@ -533,6 +530,5 @@ def roc(binary, score):
     plt.title("Receiver operating characteristic example")
     plt.legend(loc="lower right")
     plt.show()
-
 
 # %%

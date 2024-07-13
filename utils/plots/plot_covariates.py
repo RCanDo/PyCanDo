@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Variable (y) vs covariate (x)
 version: 1.0
 type: module
@@ -97,27 +94,28 @@ def plot_covariates(
     """
     Remarks
     -------
-    1. It is assumed that e.g. variable may be passed as pd.Series
-    while covariate as a string indicating column of `data`.
-    variable and covariate may have different indices while they may be irrelevant
+    1. It is assumed that `variable` may be passed as pd.Series
+    while `covariate` as a string indicating column of `data`.
+    `variable` and `covariate` may have different indices while they may be irrelevant
     (to be ignored).
-    Thus `ignore_index` is provided which have different meaning from the same parameter of pd.concat():
-    here it means that if `ignore_index=True` then we ingore indices of variable and covariate
-    and make one index common to both of them;
-    It is important for proper aligning of both data series.
+    Thus `ignore_index` is provided but it has different meaning from the same parameter of pd.concat():
+    here it means that if `ignore_index=True` then we ignore indices of `variable` and `covariate`
+    and make one index common to both of them based solely on the elements order
+    (thus number of elements must be the same in both series);
+    It is critical for proper aligning of both data series.
     Default value for `ignore_index` is False what means that we pay attention to
-    both indices and align two series according to indices values.
+    both indices and align two series according to indices values (like in pd.concat()).
 
     2. Plots are drawn as `variable ~ covariate` i.e.
     `variable` serves as `y` (_dependent_ or _explained_ variable)
     and `covariate` serves as `x` (_independent_ or _explanatory_ variable).
     All parameter names where 'x' or 'y' is used are based on this convention.
     It was preferred to use 'x' or 'y' for its brevity;
-    However `variable` and `covariate` are used for the first two parameters
-    (instead of 'y' and 'x') to convay their meaning and objective of the whole function:
+    However, `variable` and `covariate` are used for the first two parameters
+    (instead of 'y' and 'x') to convey their meaning and objective of the whole function:
     explain (via plots) `variable` (`y`) with `covariate` (`x`).
 
-    - `most_common` applied before `sort_levels`
+    3. `most_common` applied before `sort_levels`.
     """
     # -------------------------------------------------------------------------
     #  loading data
@@ -612,8 +610,7 @@ def plot_covariates(
                       loc='lower left', fontsize='small')
 
         #  ---------
-        result = dict(rects=rects, data=data)
-        return dict(ax=ax, result=result)
+        return dict(ax=ax, rects=rects, data=data)
 
     # -----------------------------------------------------
     #  special

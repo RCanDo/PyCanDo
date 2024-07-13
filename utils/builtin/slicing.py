@@ -17,11 +17,10 @@ sources:
 file:
     date: 2023-01-16
     authors:
-        - nick: rcando
+        - nick: arek
           fullname: Arkadiusz Kasprzyk
           email:
-              - akasp666@google.com
-              - arek@staart.pl
+              - arkadiusz.kasprzyk@quantup.pl
 """
 
 # %%

@@ -2,24 +2,20 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: str utils
 version: 1.0
-type: code
 keywords: [str, ]
 description: |
     string utils
-remarks:
-    - In this file we try hard to not use any additional package - only built-ins!
-      With few exceptions like itertools or functools (which)
 todo:
 sources:
 file:
     date: 2019-11-20
     authors:
         - nick: arek
+          fullname: Arkadiusz Kasprzyk
+          email:
+              - arkadiusz.kasprzyk@quantup.pl
 """
 
 #%%
@@ -57,12 +53,12 @@ filter_re("qra", ll)
 filter_re("^qra", ll)
 filter_re("urak*$", ll)
 
-iprint(ll)
-iprint(ll, sep=" & ")
-iprint(ll, pref="i.")
-iprint(ll, suff=" ?")
-iprint(ll, pref="i.", suff="!!!")
-iprint(ll, " | ", pref="i.", suff=".~")
+iterprint(ll)
+iterprint(ll, sep=" & ")
+iterprint(ll, pref="i.")
+iterprint(ll, suff=" ?")
+iterprint(ll, pref="i.", suff="!!!")
+iterprint(ll, " | ", pref="i.", suff=".~")
 
 """
 #%%

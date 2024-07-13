@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Diagnostic plots for one variable
 version: 1.0
 type: module
@@ -90,7 +87,7 @@ def plot_variable(
     """
     # -----------------------------------------------------
 
-    if isinstance(variable, str):
+    if isinstance(variable, (str, tuple)):
         varname = variable
         variable = data[variable]
     else:
@@ -129,6 +126,9 @@ def plot_variable(
             size=coalesce(size, num_size),
             width_adjust=coalesce(width_adjust, num_width_adjust),
             *args, **kwargs)
+
+    if result:
+        result['as_factor'] = as_factor
 
     return result
 

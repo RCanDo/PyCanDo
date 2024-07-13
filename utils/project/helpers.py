@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Project specific helpers
 version: 1.0
 type: module
@@ -327,5 +324,21 @@ def metrics_df(models_dict, metric, raw=False):
     metrics = pd.DataFrame({"test": pd.Series(test_dic), "train": pd.Series(train_dic)})
 
     return metrics
+
+
+def print_missing_reports(
+    missing_models: list[str], number_atomic_storages: int
+) -> None:
+    """
+    This function gives an information about the number of missing models.
+
+    Args:
+    - missing_models (list[str]): list of id of missing models that are missing
+    - number_atomic_storages (int): count of identified and unidentified atomic storages.
+    """
+    if missing_models:
+        print(f"! Found {len(missing_models)} missing reports that have not been aggregated for {missing_models}")
+        if len(missing_models) == number_atomic_storages:
+            raise Exception("No reports have been loaded. Please review the provided inputs.")
 
 # %%

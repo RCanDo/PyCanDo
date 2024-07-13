@@ -13,7 +13,7 @@ remarks:
 todo:
 sources:
 file:
-    date: 2022-06-01
+    date: 2024-01-12
     authors:
         - fullname: Arkadiusz Kasprzyk
           email:
@@ -33,16 +33,13 @@ import pypandoc
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
-from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-from scikitplot.metrics import plot_cumulative_gain, plot_lift_curve
-from sklearn.metrics import roc_curve, precision_recall_curve
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import roc_curve
 import matplotlib.pyplot as plt
-from xgboost import XGBClassifier
 
 from utils.stats import MetricsBin, MetricsReg
 import utils.builtin as bi
 from utils.project import to_dict
-from utils.plots import plot_covariates
 from common.storage import Storage
 
 
@@ -67,42 +64,35 @@ class ModelDiag(bi.Repr):
     def __init__(
             self,
             storage: Storage,
-            calibrated: bool = None,
+            calibrated: bool = False,
             stats: tuple[str] = None,
             threshold: float = None,
-            q_order: int = None,
-            threshold_separately: bool = None
     ):
         """
         storage: Storage,
             object where all data sources and targets are defined; needs to be initialised saparately;
             paths to model object and all (train/test) data necessary for its diagnosis are stored in this object;
             however client is never forced to use them directly.
-        calibrated: bool = None,
+        calibrated: bool = False,
             if False then raw version of the model (internally called 'fit') is loaded and diagnosed.
             if True then calibrated version is loaded.
         stats: tuple[str] = None,
             collection of metrics (stats) to be calculated;
             only those which are predefined in respective Metrics class will be considered.
-        threshold: float = None,
+        threshold: float = .5,
             threshold for binary classifier (see MetricsBin help).
-        q_order: int = None,
-            order of quantiles for some statistics, like lift and gain.
         """
         super().__init__()
         self.storage = storage
 
         self._stats = stats
         self.config = self.storage.load("config")
+
         self._init_threshold(threshold)
-        self._init_q_order(q_order)
 
-        # self.separately = False if threshold is not None or threshold_separately is None else threshold_separately
-        self.separately = threshold_separately
+        self.binary = self.storage.objective in ('rtb', 'ecom')  # !!! ad-hoc
 
-        self.binary = self.storage.objective != 'val'  # !!! ad-hoc
-
-        self._calibrated = bi.coalesce(calibrated, storage.calibrated, True) if self.binary else False
+        self._calibrated = bi.coalesce(calibrated, storage.calibrated) if self.binary else False
 
         self.model = self.storage.load(self.stage)
 
@@ -114,8 +104,8 @@ class ModelDiag(bi.Repr):
         self.features, self.best_features = self._get_features()
 
         self.X_train, self.y_train = None, None
-        self.X_test, self.y_test = None, None
         self.X_valid, self.y_valid = None, None
+        self.X_test, self.y_test = None, None
         self._get_data()
 
         self.y_train_hat, self.y_test_hat, self.y_valid_hat = self._get_predictions()
@@ -138,17 +128,8 @@ class ModelDiag(bi.Repr):
             if isinstance(self.model, Pipeline):
                 try:
                     best_features_idx = self.model['best_features_selection'].get_support(indices=True)
-                    all_features_after_transform = \
-                        [name.split("__")[1] for name in self.model['transform'].get_feature_names_out()]
-                    best_features = np.array(all_features_after_transform)[best_features_idx].tolist()
-                    # best_features = np.array(features)[best_features_idx].tolist()
+                    best_features = np.array(features)[best_features_idx].tolist()
                     self.storage.save(best_features, "best_features")
-                except Exception as e:
-                    print(e)
-                    best_features = None
-            elif isinstance(self.model, XGBClassifier) or isinstance(self.model, CalibratedClassifierCV):
-                try:
-                    best_features = features
                 except Exception as e:
                     print(e)
                     best_features = None
@@ -156,6 +137,17 @@ class ModelDiag(bi.Repr):
                 best_features = None
 
         return features, best_features
+
+    def _get_data(self) -> None:
+        """
+        Get all data on which model was built
+        X_train, X_test, X_valid, y_train, y_test, y_valid
+        It does not return, only fills already prepared (empty) entires.
+        """
+        self.__dict__.update(self.storage.load("split"))
+        self.X_train = self.X_train[self.features]
+        self.X_test = self.X_test[self.features]
+        self.X_valid = self.X_valid[self.features] if len(self.X_valid) > 0 else self.X_valid
 
     def _get_importances(self, model):
         """
@@ -168,17 +160,6 @@ class ModelDiag(bi.Repr):
             print(e)
             importances = None
         return importances
-
-    def _get_data(self) -> None:
-        """
-        Get all data on which model was built
-        X_train, X_test, X_valid, y_train, y_test, y_valid
-        It does not return, only fills already prepared (empty) entires.
-        """
-        self.__dict__.update(self.storage.load("split"))
-        self.X_train = self.X_train[self.features]
-        self.X_test = self.X_test[self.features]
-        self.X_valid = self.X_valid[self.features] if len(self.X_valid) > 0 else self.X_valid
 
     def _get_predictions(self) -> tuple[pd.Series, pd.Series, pd.Series]:
         """
@@ -201,46 +182,13 @@ class ModelDiag(bi.Repr):
             y_hat = self.model.predict_proba(X)[:, 1]
         else:
             y_hat = self.model.predict(X)
-        return pd.Series(y_hat, index=X.index)
+        return pd.Series(y_hat)
 
-    def _yyhat(
-            self, mode: str, numpy: bool = False
-    ) -> tuple[pd.Series | np.ndarray, pd.Series | np.ndarray]:
-        """
-        mode: str,
-            possible values: "train" / "test"
-        numpy: bool = False
-            if False, y and y_hat are returned as pd.Series;
-            if True, y and y_hat are returned as np.arrays,
-            and y_hat is 2-dim array: `np.array([1 - y_hat, y_hat]).T`
-            as original prediction from binary model, giving scores for 0 and 1 in each row;
-
-        """
-        if mode == "train":
-            y = self.y_train
-            y_hat = self.y_train_hat
-        elif mode == "test":
-            y = self.y_test
-            y_hat = self.y_test_hat
-        else:
-            raise ValueError(f'mode can be "train" or "test", given {mode}')
-
-        if self.binary and numpy:
-            y = y.values
-            y_hat = y_hat.values
-            y_hat = np.array([1 - y_hat, y_hat]).T
-
-        return y, y_hat
-
-    def performance(self, separately: bool = False) -> None:
+    def performance(self) -> None:
         """
         Computes all the metrics for sel.model based on y_train, y_train_hat, y_test, y_test_hat.
         """
-        if separately:
-            self.metrics._compute_0("test", self.y_test, self.y_test_hat, self.metrics.threshold_opt["test"])
-            self.metrics._compute_0("train", self.y_train, self.y_train_hat, self.metrics.threshold_opt["train"])
-        else:
-            self.metrics.compute(self.y_train, self.y_train_hat, self.y_test, self.y_test_hat)
+        self.metrics.compute(self.y_train, self.y_train_hat, self.y_test, self.y_test_hat)
 
     @property
     def stage(self):
@@ -282,33 +230,12 @@ class ModelDiag(bi.Repr):
     def threshold(self, new_thresh):
         if self.binary:
             if self._threshold != new_thresh:
-                print("`threshold` changed -- some metrics needs to be recalculated ...")
+                print("`threshold` changed -- all metrics needs to be recalculated ...")
                 self._threshold = new_thresh
-                self.metrics = MetricsBin(self._stats, self._threshold, self._q_order)
+                self.metrics = MetricsBin(self._stats, self._threshold)
                 self.performance()
-                # print(self._threshold)
         else:
             print("In case of regression model `threshold` is irrelevant.")
-
-    def _init_q_order(self, q_order: float) -> None:
-        self._q_order = bi.coalesce(q_order, self.config.get('q_order'), 10)
-        self.config['q_order'] = self._q_order
-        self.storage.save(self.config, "config")
-
-    @property
-    def q_order(self):
-        return self._q_order
-
-    @q_order.setter
-    def q_order(self, new_q_order):
-        if self.binary:
-            if self._q_order != new_q_order:
-                print("`q_order` changed -- some metrics needs to be recalculated ...")
-                self._q_order = new_q_order
-                self.metrics = MetricsBin(self._stats, self._threshold, self._q_order)
-                self.performance()
-        else:
-            print("In case of regression model `q_order` is irrelevant.")
 
     @property
     def stats(self):
@@ -320,7 +247,7 @@ class ModelDiag(bi.Repr):
             print("`stats` changed -- Metrics object needs to be recalculated ...")
             self._stats = new_stats
             if self.binary:
-                self.metrics = MetricsBin(self._stats, self._threshold, self._q_order)
+                self.metrics = MetricsBin(self._stats, self._threshold)
             else:
                 self.metrics = MetricsReg(self._stats)
             self.performance()
@@ -367,270 +294,139 @@ class ModelDiag(bi.Repr):
         return deepcopy(self)
 
     # %% plots
-
-    def __save_fig(self, mode: str, path: str | Path = ".") -> Path | str:
-        plt.tight_layout()
-        if path:
-            file = f"{self.file_stem}-{mode}.png" if mode else f"{self.file_stem}.png"
-            file = Path(path) / file
-            plt.savefig(file)
-        else:
-            file = ""
-        return file
-
     def plot_regression(
             self,
-            mode: str = None,
-            path: str | Path = ".",
+            y: pd.Series = None,
+            y_hat: pd.Series = None,
+            info: str = None,
             figsize: tuple[int] = (6, 6),
-    ) -> Path | str:
+            path: str | Path = ".",
+    ) -> Path:
         """
         Plots predicted values vs true values for regression model.
 
         Arguments
         ---------
-        mode: str
-            one of 'train' or 'test'.
-        path: str | Path = "."
-            directory where the file with plot will be written;
-            to not write the plot to file
-            empty string "" may be passed (or anything which evaluates to `False` in `if` statement);
+        y: pd.Series = None,
+            true value of a target
+        y_hat: pd.Series = None,
+            predicted value of a target.
+        info: str = None,
+            additional info to be printed within main figure title, just after "Regression".
         figsize: tuple[int] = (6, 6)
             size of a figure in inches, (width, height).
+        path: str | Path = "."
+            directory where the file with plot will be written
 
         Returns
-        -------sh
-        file: Path | str
+        -------
+        file: str
             name of a file to which the plot is stored (in a current working directory);
-            this name is set automatically based on data from self.storage;
-            empty string (meaning the plot was not written to file) if `path=""`.
+            this name is set automatically based on data from self.storage.
         """
-        y, y_hat = self._yyhat(mode)
+        if info is None and y is None:
+            info = "test"
+        y = bi.coalesce(y, self.y_test)
+        y_hat = bi.coalesce(y_hat, self.y_test_hat)
         plt.figure(figsize=figsize)
         #
         p1 = max(max(y), max(y_hat))
         p2 = min(min(y), min(y_hat))
         plt.scatter(y, y_hat, c='crimson', alpha=.2, s=4)
         plt.axline((p1, p1), (p2, p2), color='gray', linewidth=.7)
-        plt.title(f"Regression {mode}")
+        plt.title(f"Regression {info}")
         plt.xlabel('True Values')
         plt.ylabel('Predictions')
         #
-        file = self.__save_fig(mode, path)
+        plt.tight_layout()
+        file = f"{self.file_stem}-{info}.png" if info else f"{self.file_stem}.png"
+        file = Path(path) / file
+        plt.savefig(file)
         return file
 
     def plot_roc(
             self,
-            mode: str = None,
-            path: str | Path = ".",
+            y: pd.Series = None,
+            y_hat: pd.Series = None,
+            info: str = None,
             figsize: tuple[int] = (4, 4),
+            path: str | Path = ".",
     ) -> Path:
         """
         ROC curve for binary model
 
         Arguments
         ---------
-        mode: str
-            one of 'train' or 'test'.
-        path: str | Path = "."
-            directory where the file with plot will be written
-            to not write the plot to file
-            empty string "" may be passed (or anything which evaluates to `False` in `if` statement);
+        y: pd.Series = None,
+            true value of a target
+        y_hat: pd.Series = None,
+            predicted value of a target; this must be raw prediction (.predict_proba), not binarised yet.
+        info: str = None,
+            additional info to be printed within main figure title, just after "ROC".
         figsize: tuple[int] = (4, 4)
             size of a figure in inches, (width, height).
+        path: str | Path = "."
+            directory where the file with plot will be written
 
         Returns
         -------
         file: str
             name of a file to which the plot is stored (in a current working directory);
             this name is set automatically based on data from self.storage.
-            empty string (meaning the plot was not written to file) if `path=""`.
         """
-        y, y_hat = self._yyhat(mode)
+        if info is None and y is None:
+            info = "test"
+        y = bi.coalesce(y, self.y_test)
+        y_hat = bi.coalesce(y_hat, self.y_test_hat)
         plt.figure(figsize=figsize)
         #
         fpr, tpr, _ = roc_curve(y, y_hat)
         plt.plot(fpr, tpr)
         plt.axline((0, 0), (1, 1), color='gray', linewidth=.7)
-        plt.title(f"ROC {mode}")
+        plt.title(f"ROC {info}")
         plt.ylabel("True Positive Rate")
         plt.xlabel("False Positive Rate")
         #
-        file = self.__save_fig(mode, path)
+        plt.tight_layout()
+        file = f"{self.file_stem}-{info}.png" if info else f"{self.file_stem}.png"
+        file = Path(path) / file
+        plt.savefig(file)
         return file
 
-    def plot_calibration(
+    def plot(
             self,
-            mode: str = None,
+            data_type: str,
             path: str | Path = ".",
-            figsize: tuple[int] = (4, 4),
-    ) -> Path:
+    ) -> str | Path:
         """
-        Plots calibration curve for binary model.
+        Renders and stores diagnostics plots for train or test data,
+        proper to the type of self.model: 'ROC' for binary and 'Regression' for regression model.
 
         Arguments
         ---------
-        mode: str
+        data_type: str
             one of 'train' or 'test'.
         path: str | Path = "."
             directory where the file with plot will be written
-            to not write the plot to file
-            empty string "" may be passed (or anything which evaluates to `False` in `if` statement);
-        figsize: tuple[int] = (6, 6)
-            size of a figure in inches, (width, height).
 
         Returns
         -------
         file: str
             name of a file to which the plot is stored (in a current working directory);
             this name is set automatically based on data from self.storage.
-            empty string (meaning the plot was not written to file) if `path=""`.
         """
-        y, y_hat = self._yyhat(mode)
-        plt.figure(figsize=figsize)
-        #
-        prob_true, prob_pred = calibration_curve(y, y_hat, strategy="quantile", n_bins=10)
-
-        plt.plot(prob_pred, prob_true, linewidth=2, marker='o')
-        plt.xlabel('predicted prob', fontsize=14)
-        plt.ylabel('empirical prob', fontsize=14)
-        axis_lim = max(max(prob_pred), max(prob_true)) * 1.1
-        plt.ylim((0, axis_lim))
-        plt.xlim((0, axis_lim))
-        plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
-        names_legend = [f'model_{self.stage}', 'ideal']
-        plt.legend(names_legend, fontsize=10)
-        plt.title(f"calibration curve - {mode}")
-        #
-        file = self.__save_fig(f"calibration-{mode}", path)
-        return file
-
-    def plot_lift(
-            self,
-            mode: str,
-            path: str | Path = ".",
-            figsize: tuple[int] = (4, 4),
-            nticks: int = 10,
-            title: str = "lift",
-            scikit: bool = True,
-    ) -> str | Path:
-        """"""
-        fig = plt.figure(figsize=figsize)
-
-        if not scikit:
-            if mode in ["train", "test"]:
-                ss = self.metrics.lift[mode].to_series(False)
-                ss.index = ss.index.astype(str)
-            else:
-                raise ValueError(f'mode can be "train" or "test", given {mode}')
-
-            q = len(ss)
-            step = max(round(q / nticks), 1)
-            xticks = list(range(0, q, step))
-            if q - 1 not in xticks:
-                xticks.append(q - 1)
-
-            ax = ss.plot(xticks=xticks)
-            ax.axhline(1, color='gray', linewidth=.7)
+        if data_type == "train":
+            y = self.y_train
+            y_hat = self.y_train_hat
+        elif data_type == "test":
+            y = self.y_test
+            y_hat = self.y_test_hat
         else:
-            y, y_hat = self._yyhat(mode, True)
-
-            ax = fig.add_subplot(111)
-            ax = plot_lift_curve(y, y_hat, ax=ax)
-
-        ax.set_title(title + " " + mode)
-        ax.set_ylabel(title)
-        ax.set_xlabel("quantile")
-        #
-        file = self.__save_fig(f"lift-{mode}", path)
-        return file
-
-    def plot_gain(
-            self,
-            mode: str,
-            path: str | Path = ".",
-            figsize: tuple[int] = (4, 4),
-            nticks: int = 10,
-            title: str = "gain",
-            scikit: bool = True,
-    ) -> str | Path:
-        """"""
-        fig = plt.figure(figsize=figsize)
-
-        if not scikit:
-            if mode in ["train", "test"]:
-                ss = self.metrics.gain[mode].to_series(False)
-                ss.index = ss.index.astype(str)
-            else:
-                raise ValueError(f'mode can be "train" or "test", given {mode}')
-
-            q = len(ss)
-            step = max(round(q / nticks), 1)
-            xticks = list(range(0, q, step))
-            if q - 1 not in xticks:
-                xticks.append(q - 1)
-
-            ax = ss.plot(xticks=xticks)
-            ax.axline((0, 0), (q - 1, 1), color='gray', linewidth=.7)
-
+            raise ValueError(f'data_type can be "train" or "test", given {data_type}')
+        if self.binary:
+            file = self.plot_roc(y, y_hat, data_type, path=path)
         else:
-            y, y_hat = self._yyhat(mode, True)
-
-            ax = fig.add_subplot(111)
-            ax = plot_cumulative_gain(y, y_hat, ax=ax)     # figsize=figsize)
-
-        ax.set_title(title + " " + mode)
-        ax.set_ylabel(title)
-        ax.set_xlabel("quantile")
-        #
-        file = self.__save_fig(f"gain-{mode}", path)
-        return file
-
-    def plot_precision_recall(
-            self,
-            mode: str,
-            path: str | Path = ".",
-            figsize: tuple[int] = (6, 6),
-    ) -> str | Path:
-        """"""
-        y, y_hat = self._yyhat(mode)
-        if mode == "train":
-            p, r = self.metrics.precision_opt[mode], self.metrics.recall_opt[mode]
-            label_pr = "optimal (precision, recall)"
-        elif mode == "test":
-            p, r = self.metrics.precision[mode], self.metrics.sensitivity[mode]
-            label_pr = "obtained (precision, recall)"
-        plt.figure(figsize=figsize)
-        #
-        print("Plot", p, r)
-        precision, recall, _ = precision_recall_curve(y, y_hat)
-        plt.plot(recall, precision, marker='.')
-        plt.scatter([r], [p], marker='o', color='green')
-        plt.title(f"precision-recall - {mode}")
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.legend(["precision-recall curve", label_pr])
-        #
-        file = self.__save_fig(f"precrec-{mode}", path)
-        return file
-
-    def plot_score_distribution(
-            self,
-            mode: str,
-            path: str | Path = ".",
-            figsize: tuple[int] = (7, 7),
-    ) -> str | Path:
-        """"""
-        y, y_hat = self._yyhat(mode)
-        plot_covariates(
-            y_hat, y,   # !
-            varname="score", covarname="target",
-            title_suffix=f" - {mode}",
-            what=[["grouped_cloud", "distr"], ["boxplots", "densities"]],
-            figsize=figsize,
-        )
-        #
-        file = self.__save_fig(f"score-{mode}", path)
+            file = self.plot_regression(y, y_hat, data_type, path=path)
         return file
 
     # %% generating reports
@@ -662,136 +458,50 @@ class ModelDiag(bi.Repr):
         -------
         file_out: str,
             name of a file to which the report is stored (in a current working directory).
-        plots: str,
-            dictionary of file names (in a current working directory) for all generated plots;
+        fig_train: str,
+            name of a file to which the plot for train data is stored (in a current working directory);
+        fig_test: str
+            name of a file to which the plot for test data is stored (in a current working directory);
        """
 
-        plot_files = {}  # could be ordinary list but it's better managable (via names) for the future
-
-        # If new threshold was set, then recalculate results
-        if self.binary:
-            self.performance(separately=self.separately)
+        fig_train = self.plot("train", path)
+        fig_test = self.plot("test", path)
 
         stats_df = self.metrics.to_frame().round(precision)
 
+        binary_stats = []
         if self.binary and isinstance(self.metrics, MetricsBin):
-
-            if "confusion" in self.metrics._stats:
-                confusion = self.metrics.confusion_df()
-                confusion = confusion.reset_index().rename(columns={'level_0': ''})
-                conf_train = confusion[confusion[''] == 'train']
-                conf_test = confusion[confusion[''] == 'test']
-                confusion_train = "__Confusion matrix__, train, threshold ="\
-                                  + f"{round(self.metrics.threshold_opt['train'], 5)}"\
-                                  + "\n\n" + conf_train.to_markdown(index=False)
-                confusion_test = "__Confusion matrix__, test, threshold ="\
-                                  + f"{round(self.metrics.threshold_opt['test'], 5)}"\
-                                  + "\n\n" + conf_test.to_markdown(index=False)
-                confusion = confusion_train + "\n\n" + confusion_test
-            else:
-                confusion = ''
+            confusion = self.metrics.confusion_df()
+            confusion = confusion.reset_index().rename(columns={'level_0': ''})
+            confusion = f"__Confusion matrix__, threshold = {self.threshold} \n\n" \
+                        + confusion.to_markdown(index=False)
 
             if "nobs" in self.metrics._stats:
                 df_target = pd.DataFrame(
                     [[0, self.metrics.nobs0["train"], self.metrics.nobs0["test"]],
                      [1, self.metrics.nobs1["train"], self.metrics.nobs1["test"]]],
                     columns=["target", "train", "test"])
+                target = f"{df_target.to_markdown(index=False)}"
+                target_title = "### Number of 0/1 in target for train and test sets"
                 stats_df.drop(index="nobs0", axis=1, inplace=True)
                 stats_df.drop(index="nobs1", axis=1, inplace=True)
-                nobs = "### Number of 0/1 in target for train and test sets" + "\n\n" + \
-                    df_target.to_markdown(index=False)
             else:
-                nobs = ''
+                target, target_title = '', ''
 
-            fig_train = self.plot_roc("train", path)
-            fig_test = self.plot_roc("test", path)
-            plot_files["roc_train"] = fig_train
-            plot_files["roc_test"] = fig_test
-            roc = "###" + "\n\n" + \
-                f"![train]({fig_train})" + "\n\n" + \
-                f"![test]({fig_test})"
+            binary_stats = [confusion, target_title, target]
 
-            if "lift" in self.metrics._stats:
-                # lift = self.metrics.lift_df()
-                fig_lift_train = self.plot_lift("train", path)
-                fig_lift_test = self.plot_lift("test", path)
-                plot_files["lift_train"] = fig_lift_train
-                plot_files["lift_test"] = fig_lift_test
-                lift = "###" + "\n\n" + \
-                    f"![train]({fig_lift_train})" + "\n\n" + \
-                    f"![test]({fig_lift_test})"
-            else:
-                lift = ""
-
-            if "gain" in self.metrics._stats:
-                # gain = self.metrics.gain_df()
-                fig_gain_train = self.plot_gain("train", path)
-                fig_gain_test = self.plot_gain("test", path)
-                plot_files["gain_train"] = fig_gain_train
-                plot_files["gain_test"] = fig_gain_test
-                gain = "###" + "\n\n" + \
-                    f"![train]({fig_gain_train})" + "\n\n" + \
-                    f"![test]({fig_gain_test})"
-            else:
-                gain = ""
-
-            if 'precision' in self.metrics._stats or 'sensitivity' in self.metrics._stats:
-                fig_precrec_train = self.plot_precision_recall("train", path)
-                fig_precrec_test = self.plot_precision_recall("test", path)
-                plot_files["precrec_train"] = fig_precrec_train
-                plot_files["precrec_test"] = fig_precrec_test
-                precrec = "###" + "\n\n" + \
-                    f"![train]({fig_precrec_train})" + "\n\n" + \
-                    f"![test]({fig_precrec_test})"
-            else:
-                precrec = ""
-
-            fig_score_train = self.plot_score_distribution("train", path)
-            fig_score_test = self.plot_score_distribution("test", path)
-            plot_files["score_train"] = fig_score_train
-            plot_files["score_test"] = fig_score_test
-            score = "###" + "\n\n" + \
-                f"![train]({fig_score_train})" + "\n\n" + \
-                f"![test]({fig_score_test})"
-
-            fig_calibration_train = self.plot_calibration("train", path)
-            fig_calibration_test = self.plot_calibration("test", path)
-            plot_files["calibration_train"] = fig_calibration_train
-            plot_files["calibration_test"] = fig_calibration_test
-            calibration = "###" + "\n\n" + \
-                    f"![train]({fig_calibration_train})" + "\n\n" + \
-                    f"![test]({fig_calibration_test})"
-
-            stats = [confusion, nobs]
-            plots = [roc, lift, gain, precrec, calibration, score]
-
-        else:
-
-            fig_train = self.plot_regression("train", path)
-            fig_test = self.plot_regression("test", path)
-            plot_files["reg_train"] = fig_train
-            plot_files["reg_test"] = fig_test
-            regression = "###" + "\n\n" + \
-                f"![train]({fig_train})" + "\n\n" + \
-                f"![test]({fig_test})"
-
-            stats = []
-            plots = [regression]
-
-        if self.importances is not None:
-            features_importances = "### Feature Importances" + "\n\n" + \
-                self.importances.round(precision).to_markdown()
-        else:
-            features_importances = ""
+        features_importances = f"### Feature Importances\n, {self.importances.round(precision).to_markdown()}"\
+                                if self.importances is not None else ""
 
         content = [
             f"# {self.storage.model_id} -- {self.storage.objective.upper()} -- {self.stage}",
             f"## Report {dt.datetime.now().isoformat()[:19]}",  # with/without Time Zone ?
             "### Statistics",
             stats_df.to_markdown(),
-            *stats,
-            features_importances,
-            *plots,
+            *binary_stats,
+            f"![train]({fig_train})",
+            f"![test]({fig_test})",
+            f"{features_importances}",
             #
             "### Config",
             "```\n" + yaml.dump(self.config, sort_keys=False, indent=4) + "\n```"
@@ -804,7 +514,7 @@ class ModelDiag(bi.Repr):
         with open(file, "wt") as f:
             f.write("\n\n".join(content))
 
-        return file_out, plot_files
+        return file_out, fig_train, fig_test
 
     def report_pdf(
             self,
@@ -885,50 +595,19 @@ class ModelDiag(bi.Repr):
             name of file to which feature importances shall be stored;
             if None then set automatically based on data from `self.storage`.
         path: str | Path = "."
-            directory where the file with  feature importances will be written
+            directory where the file with metrics will be written
 
         Returns
         -------
         file_out: Path,
             name of a file to which the feature importances is stored (in a current working directory).
         """
-        if self.importances is not None:
-            file = file if file else f"{self.file_stem}-feature_importances"
-            file = Path(path) / file
-            file_out = file.with_suffix(".json")
-            importances_json = self.importances.to_json()
-            with open(file_out, 'w') as f:
-                json.dump(importances_json, f)
-        else:
-            file_out = ""
-        return file_out
-
-    def save_confusion_matrix(
-            self,
-            file: Union[str, PosixPath] = None,
-            path: str | Path = ".",
-    ) -> Path:
-        """
-        Arguments
-        ---------
-        file: str
-            name of file to which confusion matrix shall be stored;
-            if None then set automatically based on data from `self.storage`.
-        path: str | Path = "."
-            directory where the file with confusion matrix will be written
-
-        Returns
-        -------
-        file_out: Path,
-            name of a file to which the fconfusion matrix is stored (in a current working directory).
-        """
-        if self.binary:
-            file = file if file else f"{self.file_stem}-confusion_matrix"
-            file = Path(path) / file
-            file_out = file.with_suffix(".csv")
-            self.metrics.confusion_df().to_csv(file_out)
-        else:
-            file_out = ""
+        file = file if file else f"{self.file_stem}-feature_importances"
+        file = Path(path) / file
+        file_out = file.with_suffix(".json")
+        importances_json = self.importances.to_json()
+        with open(file_out, 'w') as f:
+            json.dump(importances_json, f)
         return file_out
 
     # %%
@@ -962,12 +641,11 @@ class ModelDiag(bi.Repr):
             if we really don't want to retain results locally (value of `storage` param is then irrelevant).
         """
 
-        file_md, plots = self.report_md(name, precision, path=path)
+        file_md, fig_train, fig_test = self.report_md(name, precision, path=path)
         file_pdf = self.report_pdf(path=path)
-
         file_metrics = self.save_metrics(path=path)
-        file_importances = self.save_feature_importances(path=path)
-        file_confusion_matrix = self.save_confusion_matrix(path=path)
+        if self.importances is not None:
+            file_importances = self.save_feature_importances(path=path)
 
         if storage:
             match storage:
@@ -979,11 +657,9 @@ class ModelDiag(bi.Repr):
                     raise ValueError(f'Invalid storage file movement option; given `{storage}`.')
 
             fun(file_md, "report")
-
-            for fig in plots:
-                fun(plots[fig], "report")
-
+            fun(fig_train, "report")
+            fun(fig_test, "report")
             fun(file_pdf, "report")
             fun(file_metrics, "report")
-            fun(file_importances, "report")
-            fun(file_confusion_matrix, "report")
+            if self.importances is not None:
+                fun(file_importances, "report")

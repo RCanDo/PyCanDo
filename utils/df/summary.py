@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ---
-# This is YAML, see: https://yaml.org/spec/1.2/spec.html#Preview
-# !!! YAML message always begin with ---
-
 title: Info and summary on pd.DataFrame
 version: 1.0
 type: module
@@ -65,20 +62,25 @@ def print0(df: pd.DataFrame, zero_fill: str = None, na_rep: str = "-", *args, **
 
 
 # %%
-def info(df: pd.DataFrame,
-         what=("dtype", "oks", "oks_ratio", "nans_ratio", "nans", "uniques", "most_common", "most_common_ratio"),
-         add=None,  # "position", "most_common_value", "negatives", "zeros", "positives",
-                    # "mean", "median", "min", "max", "range", "dispersion", "iqr"
-         sub=None,  # things (stats) we do not want (even if otherwise we want "all"/"everything")
-         #
-         omit=None,     # columns/variables to omit
-         dtypes=None,   # only these types; if None then all types
-         exclude=None,  # but not these types
-         round=None,
-         name_as_index=True,
-         short_names=False,
-         exceptions=False
-         ) -> pd.DataFrame:
+def info(
+        df: pd.DataFrame,
+        what: tuple[str] | list[str] | str = (
+            "dtype", "oks", "oks_ratio", "nans_ratio", "nans", "uniques", "most_common", "most_common_ratio"
+        ),
+        add: tuple[str] | list[str] | str = None,
+        #            # "position", "most_common_value", "negatives", "zeros", "positives"
+        #            # "mean", "median", "min", "max", "range", "dispersion", "iqr"
+        sub: tuple[str] | list[str] | str = None,  # things (stats) we do not want
+        #            # (even if otherwise we want "all"/"everything")
+        #
+        omit: tuple[str] | list[str] | str = None,     # columns/variables to omit
+        dtypes: tuple[str] | list[str] | str = None,   # only these types; if None then all types
+        exclude: tuple[str] | list[str] | str = None,  # but not these types
+        round: int = None,
+        name_as_index: bool = True,
+        short_names: bool = False,
+        exceptions: bool = False,
+) -> pd.DataFrame:
     """
     Basic information on columns of data frame `df`.
      Remarks:
@@ -270,7 +272,7 @@ def info(df: pd.DataFrame,
 
     #  ----------------------------------------------------
 
-    for n, ss in df.iteritems():
+    for n, ss in df.items():  # iteritems() for pandas <2.0
 
         col_position += 1
 
@@ -339,20 +341,25 @@ def info(df: pd.DataFrame,
 # %%
 def summary(
         df: pd.DataFrame,
-        what=("dtype", "negatives", "zeros", "positives", "mean", "median", "min", "max", "range", "iqr", "dispersion"),
-        add=None,  # ("pos", "oks", "oks_ratio", "nans_ratio", "nans", "uniques",
-                   #  "most_common", "most_common_ratio", "most_common_value"),
-        sub=None,
+        what: tuple[str] | list[str] | str = (
+            "dtype", "negatives", "zeros", "positives", "mean", "median", "min", "max", "range", "iqr", "dispersion"
+        ),
+        add: tuple[str] | list[str] | str = None,
+        #           # "pos", "oks", "oks_ratio", "nans_ratio", "nans", "uniques",
+        #           # "most_common", "most_common_ratio", "most_common_value",
+        sub: tuple[str] | list[str] | str = None,  # things (stats) we do not want
+        #           # (even if otherwise we want "all"/"everything")
         #
-        omit=None,
-        dtypes=None,
-        exclude=None,
-        round=None,
-        name_as_index=True,
-        short_names=False,
-        exceptions=False) -> pd.DataFrame:
+        omit: tuple[str] | list[str] | str = None,     # columns/variables to omit
+        dtypes: tuple[str] | list[str] | str = None,   # only these types; if None then all types
+        exclude: tuple[str] | list[str] | str = None,  # but not these types
+        round: int = None,
+        name_as_index: bool = True,
+        short_names: bool = False,
+        exceptions: bool = False,
+) -> pd.DataFrame:
     """
-    version of info() focused by default on statistical properties (mean, meadian, etc)
+    version of info() focused by default on statistical properties (mean, meadian, etc.)
     rather then technical (like NaNs number and proportions);
     i.e. info() with different (kind of reversed) defaults
     """
