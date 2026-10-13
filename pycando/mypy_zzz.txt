@@ -1,0 +1,3 @@
+ak/nppd.py:224: error: Incompatible types in assignment (expression has type "range", variable has type "bool | list[Any]")  [assignment]
+ak/nppd.py:225: error: Incompatible types in assignment (expression has type "Literal[False] | list[str | int] | list[Any]", variable has type "ExtensionArray | ndarray[tuple[Any, ...], dtype[Any]] | Index[Any] | Series[Any] | SequenceNotStr[Hashable]")  [assignment]
+Found 2 errors in 1 file (checked 6 source files)

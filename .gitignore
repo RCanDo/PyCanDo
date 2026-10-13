@@ -1,2 +1,53 @@
 __pycache__/
 
+# https://git-scm.com/docs/gitignore
+# some temporary files
+*__pycache__*
+__pycache__/
+*.egg-info/
+*~
+nohup*
+checkpoints/
+tensorboard/
+.ipynb_checkpoints/
+.coverage
+*.kate-swp
+result/
+temp/
+tests/output/
+*.run
+
+# IDE files
+/.idea/
+/.vscode/
+.spyproject/
+
+# DVC folders
+data/**
+!data/**/
+!data/**/*.dvc
+models/**
+!models/**/
+!models/**/*.dvc
+/models_final
+/data_raw
+
+# local outputs and datasets
+/outputs
+/results
+/data_local
+
+# archives and buckets
+*.zip
+*.z7
+*.backup
+
+# mypy.sh script
+mypy-general.txt
+mypy-strict.txt
+fail.txt
+
+# provisional versions
+*zzz/
+*zzz.*
+

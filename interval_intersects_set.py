@@ -5,18 +5,33 @@ Created on Thu Sep  8 11:31:52 2022
 
 @author: arek
 """
+from typing import Iterable
 
-def interval_intersects_set(interval, collection, sort=True, closed=(True, True), values=False):
+def interval_intersects_set(
+        interval: tuple[float, float],
+        collection: Iterable,
+        sort: bool = True,
+        closed: tuple[bool, bool] = (True, True),
+) -> Iterable:
     """
     DON'T USE IT - IT'S SLOW!!!
-    interval: (a, b), a <= b
-    collection: list/set of values
-    sort: boolean
+    
+    Returns `collection` intersection with `interval`.
+
+    interval: tuple[float, float],
+        (a, b), a <= b
+    collection: Iterable,
+        list/set of values
+    sort: bool = True,
         if True then sorts `collection` in ascending order;
         turn it off (pass False) if `collections` already sorted (to spare time);
-    REMEMBER that algorithm assumes `collection` to be ordered whith ascending order;
-    so if `collection` is not ordered pass `sort=True` (default);
-    or rather turn it off (pass False) only if you are shure `collection` is already sorted.
+    closed: tuple[bool, bool] = (True, True),
+        does the respective end of a `interval` belong to it,
+        i.e. is the `interval` closed or not at this end.
+
+    REMEMBER that algorithm assumes `collection` to be ordered in ascending order;
+    so if `collection` is not ordered, or you're not sure it is, pass `sort=True` (default);
+    in other words: turn it off (pass False) only if you are sure `collection` is already sorted.
     """
 
     if len(collection) > 0:
@@ -66,7 +81,4 @@ def interval_intersects_set(interval, collection, sort=True, closed=(True, True)
 
         collection = collection.reverse()
 
-    if values:
-        return collection
-    else:
-        return len(collection) > 0
+    return collection
